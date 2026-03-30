@@ -9,13 +9,22 @@ pub struct FsmArgs {
     /// Initial state (required).
     pub initial: Ident,
 
-    /// Channel size for event queue (default: 100).
-    #[darling(default = "default_channel_size")]
+    /// Channel size for event queue (default: 100). Must be greater than 0.
+    #[darling(default = "default_channel_size", and_then = validate_channel_size)]
     pub channel_size: usize,
 }
 
 fn default_channel_size() -> usize {
     100
+}
+
+fn validate_channel_size(size: usize) -> darling::Result<usize> {
+    if size == 0 {
+        return Err(darling::Error::custom(
+            "channel_size must be greater than 0",
+        ));
+    }
+    Ok(size)
 }
 
 /// Arguments for the `#[on(state = Idle, event = Start)]` attribute.
