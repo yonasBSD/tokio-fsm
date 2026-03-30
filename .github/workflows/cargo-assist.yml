@@ -20,6 +20,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
+          ref: ${{ github.head_ref }}
           token: ${{ secrets.CARGO_ASSIST_TOKEN || secrets.GITHUB_TOKEN }}
 
       - name: Install nightly toolchain
