@@ -162,6 +162,18 @@ pub fn render_task_impl(fsm: &FsmStructure) -> TokenStream {
     }
 }
 
+pub fn render_task_drop(fsm: &FsmStructure) -> TokenStream {
+    let task_name = fsm.task_ident();
+
+    quote! {
+        impl Drop for #task_name {
+            fn drop(&mut self) {
+                self.handle.abort();
+            }
+        }
+    }
+}
+
 // --- Event loop logic (previously in logic.rs) ---
 
 /// Builds state-gated match arms for the event loop.

@@ -28,6 +28,7 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
     let run_impl = impls::render_run(fsm);
     let handle_impl = impls::render_handle_impl(fsm);
     let task_impl = impls::render_task_impl(fsm);
+    let task_drop = impls::render_task_drop(fsm);
 
     // Strip macro attributes from original methods, remove associated types
     let cleaned_items: Vec<syn::ImplItem> = original_methods
@@ -64,5 +65,6 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
 
         #handle_impl
         #task_impl
+        #task_drop
     }
 }
