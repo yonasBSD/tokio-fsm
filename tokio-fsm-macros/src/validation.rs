@@ -6,10 +6,7 @@
 //!    types)
 //! 3. Validates the FSM graph (reachability from initial state)
 
-use std::{
-    collections::{HashMap, HashSet},
-    time::Duration,
-};
+use std::{collections::HashMap, time::Duration};
 
 use darling::FromMeta;
 use petgraph::{algo::has_path_connecting, graph::DiGraph};
@@ -128,11 +125,11 @@ impl FsmStructure {
 
         // Parse methods
         let mut handlers = Vec::new();
-        let mut event_names = HashSet::new();
+        let mut event_names: Vec<Ident> = Vec::new();
         let mut events = Vec::new();
-        let mut states_set = HashSet::new();
+        let mut state_names: Vec<Ident> = Vec::new();
 
-        states_set.insert(initial_state.clone());
+        state_names.push(initial_state.clone());
 
         for item in &impl_block.items {
             if let ImplItem::Fn(method) = item {
@@ -140,19 +137,23 @@ impl FsmStructure {
 
                 // Collect states from return types
                 for state in &handler.return_states {
-                    states_set.insert(state.name.clone());
+                    if !state_names.iter().any(|s| s == &state.name) {
+                        state_names.push(state.name.clone());
+                    }
                 }
 
                 // Collect source states
                 for state in &handler.source_states {
-                    states_set.insert(state.clone());
+                    if !state_names.iter().any(|s| s == state) {
+                        state_names.push(state.clone());
+                    }
                 }
 
                 // Collect events
                 if let Some(ref event) = handler.event
-                    && !event_names.contains(&event.name)
+                    && !event_names.iter().any(|s| s == &event.name)
                 {
-                    event_names.insert(event.name.clone());
+                    event_names.push(event.name.clone());
                     events.push(event.clone());
                 }
 
@@ -160,10 +161,7 @@ impl FsmStructure {
             }
         }
 
-        let states: Vec<State> = states_set
-            .iter()
-            .map(|name| State { name: name.clone() })
-            .collect();
+        let states: Vec<State> = state_names.into_iter().map(|name| State { name }).collect();
 
         let fsm = Self {
             fsm_name,
