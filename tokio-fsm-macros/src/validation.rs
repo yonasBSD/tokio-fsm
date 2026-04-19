@@ -59,6 +59,8 @@ pub struct FsmStructure {
     pub states: Vec<State>,
     pub events: Vec<Event>,
     pub handlers: Vec<Handler>,
+    pub tracing: bool,
+    pub serde: bool,
 }
 
 impl FsmStructure {
@@ -172,6 +174,8 @@ impl FsmStructure {
             states,
             events,
             handlers,
+            tracing: args.tracing,
+            serde: args.serde,
         };
 
         fsm.validate()?;

@@ -80,7 +80,7 @@ async fn test_fsm_full_lifecycle() {
         .unwrap();
 
     // Shutdown and verify context
-    handle.shutdown_graceful();
+    handle.shutdown();
     let final_context = task.await.unwrap();
 
     assert_eq!(final_context.transition_count, 3);
@@ -103,7 +103,7 @@ async fn test_fsm_timeout() {
     tokio::time::sleep(Duration::from_millis(200)).await;
     assert_eq!(handle.current_state(), IntegrationFsmState::Failed);
 
-    handle.shutdown_immediate();
+    handle.shutdown();
     let final_context = task.await.unwrap();
     assert_eq!(final_context.transition_count, 2); // Start + Timeout
 }
@@ -120,12 +120,12 @@ async fn test_fsm_graceful_shutdown() {
         .await
         .unwrap();
 
-    // Shut down immediately after sending
-    handle.shutdown_graceful();
+    // Shut down gracefully by dropping the handle (closing the TX)
+    drop(handle);
 
     let final_context = task.await.unwrap();
 
-    // In graceful shutdown, it should process all remaining messages in the queue
+    // In graceful shutdown (via TX drop), it should process all remaining messages in the queue
     assert_eq!(final_context.transition_count, 2);
     assert_eq!(final_context.job_data, vec!["queued"]);
 }

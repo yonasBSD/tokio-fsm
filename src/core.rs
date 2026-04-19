@@ -42,18 +42,6 @@ impl<T> Transition<T> {
     }
 }
 
-/// Shutdown mode for the FSM.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShutdownMode {
-    /// Graceful shutdown: The event loop continues to process all remaining
-    /// events currently in the queue before terminating and returning the
-    /// context.
-    Graceful,
-    /// Immediate shutdown: The event loop terminates immediately, dropping any
-    /// unprocessed events in the queue, and returns the current context.
-    Immediate,
-}
-
 /// Error type returned by the FSM background task.
 ///
 /// This enum distinguishes between logical errors returned by your FSM handlers

@@ -1,15 +1,15 @@
 use std::{collections::HashMap, sync::Arc};
 
 use axum::{
+    Json, Router,
     extract::{Path, State},
     http::StatusCode,
     response::IntoResponse,
     routing::{get, post},
-    Json, Router,
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
-use tokio_fsm::{fsm, Transition};
+use tokio_fsm::{Transition, fsm};
 
 // --- DOMAIN TYPES ---
 
@@ -27,7 +27,7 @@ pub struct OrderContext {
 
 // --- FSM DEFINITION ---
 
-#[fsm(initial = Created)]
+#[fsm(initial = Created, tracing = true, serde = true)]
 impl OrderFsm {
     type Context = OrderContext;
     type Error = std::convert::Infallible;
@@ -155,7 +155,7 @@ async fn get_order_status(
     if let Some(handle) = orders.get(&id) {
         // tokio-fsm handles expose current_state() synchronously if it's available
         let state = handle.current_state();
-        return (StatusCode::OK, Json(format!("{:?}", state)));
+        return (StatusCode::OK, Json(serde_json::to_value(state).unwrap()));
     }
     (StatusCode::NOT_FOUND, Json("Order not found".to_string()))
 }

@@ -12,6 +12,14 @@ pub struct FsmArgs {
     /// Channel size for event queue (default: 100). Must be greater than 0.
     #[darling(default = "default_channel_size", and_then = validate_channel_size)]
     pub channel_size: usize,
+
+    /// Enable tracing support (default: false).
+    #[darling(default)]
+    pub tracing: bool,
+
+    /// Enable serde support (default: false).
+    #[darling(default)]
+    pub serde: bool,
 }
 
 fn default_channel_size() -> usize {

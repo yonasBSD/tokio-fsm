@@ -63,13 +63,11 @@ impl ManualFsmHandle {
     fn spawn(context: Context) -> (Self, tokio::task::JoinHandle<()>) {
         let (tx, mut rx) = mpsc::channel(100);
         let (state_tx, state_rx) = tokio::sync::watch::channel(ManualState::Idle);
-        let (shutdown_tx, mut shutdown_rx) =
-            tokio::sync::watch::channel(None::<tokio_fsm::ShutdownMode>);
+        let token = tokio_util::sync::CancellationToken::new();
 
         let handle = tokio::spawn(async move {
             let mut fsm = ManualFsm { context };
             let mut state = ManualState::Idle;
-            let _shutdown_tx = shutdown_tx;
 
             let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(3153600000));
             tokio::pin!(sleep);
@@ -79,7 +77,7 @@ impl ManualFsmHandle {
                     _ = &mut sleep => {
                         sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
                     }
-                    _ = shutdown_rx.changed() => {
+                    _ = token.cancelled() => {
                         break;
                     }
                     res = rx.recv() => {

@@ -14,23 +14,26 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
 
     quote! {
         pub fn spawn(context: #context_type) -> (#handle_name, #task_name) {
+            Self::spawn_with_token(context, tokio_util::sync::CancellationToken::new())
+        }
+
+        pub fn spawn_with_token(context: #context_type, token: tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
             let (event_tx, event_rx) = tokio::sync::mpsc::channel(#channel_size);
             let (state_tx, state_rx) = tokio::sync::watch::channel(#state_enum_name::#initial_state);
-            let (shutdown_tx, shutdown_rx) = tokio::sync::watch::channel(None);
 
             let fsm = #fsm_name {
                 state: #state_enum_name::#initial_state,
                 context,
             };
 
-            let shutdown_tx = std::sync::Arc::new(shutdown_tx);
-            let handle = tokio::spawn(fsm.run(event_rx, shutdown_rx, state_tx));
+            let handle_token = token.clone();
+            let handle = tokio::spawn(fsm.run(event_rx, token, state_tx));
 
             (
                 #handle_name {
                     event_tx,
                     state_rx,
-                    shutdown_tx,
+                    token: handle_token,
                 },
                 #task_name { handle },
             )
@@ -43,17 +46,47 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
     let state_enum_name = fsm.state_enum_ident();
     let context_type = &fsm.context_type;
     let error_type = &fsm.error_type;
+    let fsm_name_str = fsm.fsm_name.to_string();
 
     let event_arms = build_event_arms(fsm);
     let timeout_logic = build_timeout_handler(fsm);
+
+    let tracing_span = if fsm.tracing {
+        quote! {
+            let span = tracing::info_span!("fsm", name = #fsm_name_str);
+            let _guard = span.enter();
+        }
+    } else {
+        quote! {}
+    };
+
+    let tracing_cancellation = if fsm.tracing {
+        quote! {
+            #[cfg(feature = "tracing")]
+            tracing::info!("FSM received external cancellation");
+        }
+    } else {
+        quote! {}
+    };
+
+    let unhandled_event_log = if fsm.tracing {
+        quote! {
+            #[cfg(feature = "tracing")]
+            tracing::warn!(state = ?self.state, event = ?event, "Event dropped: No handler for this state");
+        }
+    } else {
+        quote! {}
+    };
 
     quote! {
         async fn run(
             mut self,
             mut events: tokio::sync::mpsc::Receiver<#event_enum_name>,
-            mut shutdown: tokio::sync::watch::Receiver<Option<tokio_fsm::ShutdownMode>>,
+            token: tokio_util::sync::CancellationToken,
             state_tx: tokio::sync::watch::Sender<#state_enum_name>,
         ) -> Result<#context_type, #error_type> {
+            #tracing_span
+
             let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(3153600000));
             tokio::pin!(sleep);
 
@@ -63,29 +96,16 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
                         #timeout_logic
                         sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
                     }
-                    _ = shutdown.changed() => {
-                        let mode = *shutdown.borrow();
-                        if let Some(mode) = mode {
-                            match mode {
-                                tokio_fsm::ShutdownMode::Immediate => return Ok(self.context),
-                                tokio_fsm::ShutdownMode::Graceful => {
-                                    while let Ok(event) = events.try_recv() {
-                                         match (self.state, event) {
-                                            #(#event_arms)*
-                                            _ => {}
-                                        }
-                                    }
-                                    return Ok(self.context);
-                                }
-                            }
-                        }
+                    _ = token.cancelled() => {
+                        #tracing_cancellation
+                        return Ok(self.context);
                     }
                     event = events.recv() => {
                         let Some(event) = event else { break };
                         match (self.state, event) {
                             #(#event_arms)*
                             _ => {
-                                // Event not handled in current state — silently ignored
+                                #unhandled_event_log
                             }
                         }
                     }
@@ -128,14 +148,14 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
                 Ok(())
             }
 
-            /// Initiates a graceful shutdown. Processes remaining events before exiting.
-            pub fn shutdown_graceful(&self) {
-                let _ = self.shutdown_tx.send(Some(tokio_fsm::ShutdownMode::Graceful));
+            /// Shuts down the FSM immediately.
+            pub fn shutdown(&self) {
+                self.token.cancel();
             }
 
-            /// Initiates an immediate shutdown. Drops unprocessed events.
-            pub fn shutdown_immediate(&self) {
-                let _ = self.shutdown_tx.send(Some(tokio_fsm::ShutdownMode::Immediate));
+            /// Returns the cancellation token for this FSM.
+            pub fn token(&self) -> &tokio_util::sync::CancellationToken {
+                &self.token
             }
         }
     }
@@ -207,27 +227,41 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 (quote! {}, quote! { () })
             };
 
+            let tracing_log = if fsm.tracing {
+                quote! {
+                    #[cfg(feature = "tracing")]
+                    tracing::info!(from = ?old_state, to = ?self.state, event = ?event, "Transition successful");
+                }
+            } else {
+                quote! {}
+            };
+
             // Result vs direct transition
             let arm_inner = if handler.is_result {
                 quote! {
+                    let old_state = self.state;
                     match self.#method_name #payload_call .await {
                         Ok(transition) => {
                             self.state = transition.into_state().into();
                             let _ = state_tx.send(self.state);
+                            #tracing_log
                             #timeout_reset
                         }
                         Err(transition) => {
                             self.state = transition.into_state().into();
                             let _ = state_tx.send(self.state);
+                            #tracing_log
                             sleep.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(3153600000));
                         }
                     }
                 }
             } else {
                 quote! {
+                    let old_state = self.state;
                     let transition = self.#method_name #payload_call .await;
                     self.state = transition.into_state().into();
                     let _ = state_tx.send(self.state);
+                    #tracing_log
                     #timeout_reset
                 }
             };

@@ -74,8 +74,8 @@ async fn main() {
     // Send done event
     handle.send(WorkerFsmEvent::Done).await.unwrap();
 
-    // Shutdown gracefully
-    handle.shutdown_graceful();
+    // Shutdown gracefully by dropping the handle
+    drop(handle);
 
     // Wait for task
     let _ = task.await;
