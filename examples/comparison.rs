@@ -1,6 +1,7 @@
 //! Example: Comparing Manual FSM Implementation vs. tokio-fsm Macro
 
 use tokio::sync::{mpsc, watch};
+use tokio::task::JoinHandle;
 use tokio_fsm::{Transition, fsm};
 
 // --- SHARED DOMAIN LOGIC ---
@@ -38,7 +39,7 @@ pub struct ManualFsm {
 }
 
 impl ManualFsm {
-    pub fn spawn(context: Context) -> (ManualHandle, tokio::task::JoinHandle<Context>) {
+    pub fn spawn(context: Context) -> (ManualHandle, JoinHandle<Context>) {
         let (tx, mut rx) = mpsc::channel(100);
         let (state_tx, state_rx) = watch::channel(ManualState::Idle);
 

@@ -1,5 +1,6 @@
 //! Example: Job worker FSM with timeouts
 
+use tokio::time::{Duration, sleep};
 use tokio_fsm::{Transition, fsm};
 
 #[derive(Debug, Clone)]
@@ -18,7 +19,7 @@ pub struct Database;
 
 impl Database {
     async fn save(&self, _job: &Job) -> Result<(), WorkerError> {
-        tokio::time::sleep(tokio::time::Duration::from_millis(10)).await;
+        sleep(Duration::from_millis(10)).await;
         Ok(())
     }
 }
@@ -69,7 +70,7 @@ async fn main() {
     handle.send(WorkerFsmEvent::Job(job)).await.unwrap();
 
     // Wait a bit
-    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    sleep(Duration::from_millis(100)).await;
 
     // Send done event
     handle.send(WorkerFsmEvent::Done).await.unwrap();

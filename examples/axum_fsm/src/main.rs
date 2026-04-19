@@ -9,6 +9,7 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tokio::time::{Duration, sleep};
 use tokio_fsm::{Transition, fsm};
 
 // --- DOMAIN TYPES ---
@@ -37,7 +38,7 @@ impl OrderFsm {
     async fn handle_validate(&mut self) -> Transition<Validated> {
         tracing::info!(id = %self.context.order.id, "Validating order...");
         // Simulate validation logic
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
         tracing::debug!(id = %self.context.order.id, "Order validated");
         Transition::to(Validated)
     }
@@ -47,7 +48,7 @@ impl OrderFsm {
     async fn handle_charge(&mut self) -> Transition<Charged> {
         tracing::info!(id = %self.context.order.id, "Charging order...");
         // Simulate payment processing
-        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+        sleep(Duration::from_millis(200)).await;
         tracing::debug!(id = %self.context.order.id, "Payment successful");
         Transition::to(Charged)
     }
@@ -57,7 +58,7 @@ impl OrderFsm {
     async fn handle_ship(&mut self) -> Transition<Shipped> {
         tracing::info!(id = %self.context.order.id, "Shipping order...");
         // Simulate shipping logic
-        tokio::time::sleep(tokio::time::Duration::from_millis(300)).await;
+        sleep(Duration::from_millis(300)).await;
         tracing::debug!(id = %self.context.order.id, "Order shipped");
         Transition::to(Shipped)
     }

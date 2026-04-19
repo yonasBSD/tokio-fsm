@@ -1,6 +1,13 @@
 use criterion::{Criterion, criterion_group, criterion_main};
-use tokio::sync::mpsc;
+use std::time::Instant as StdInstant;
+
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+    time::{Duration, Instant as TokioInstant, sleep},
+};
 use tokio_fsm::{Transition, fsm};
+use tokio_util::sync::CancellationToken;
 
 #[derive(Debug, Clone, Default)]
 pub struct Context {
@@ -28,7 +35,7 @@ impl MacroFsm {
 #[derive(Clone)]
 struct ManualFsmHandle {
     tx: mpsc::Sender<ManualEvent>,
-    state_rx: tokio::sync::watch::Receiver<ManualState>,
+    state_rx: watch::Receiver<ManualState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -60,22 +67,22 @@ impl ManualFsm {
 }
 
 impl ManualFsmHandle {
-    fn spawn(context: Context) -> (Self, tokio::task::JoinHandle<()>) {
+    fn spawn(context: Context) -> (Self, JoinHandle<()>) {
         let (tx, mut rx) = mpsc::channel(100);
-        let (state_tx, state_rx) = tokio::sync::watch::channel(ManualState::Idle);
-        let token = tokio_util::sync::CancellationToken::new();
+        let (state_tx, state_rx) = watch::channel(ManualState::Idle);
+        let token = CancellationToken::new();
 
         let handle = tokio::spawn(async move {
             let mut fsm = ManualFsm { context };
             let mut state = ManualState::Idle;
 
-            let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(3153600000));
+            let sleep = sleep(Duration::from_secs(3153600000));
             tokio::pin!(sleep);
 
             loop {
                 tokio::select! {
                     _ = &mut sleep => {
-                        sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
+                        sleep.as_mut().reset(TokioInstant::now() + Duration::from_secs(3153600000));
                     }
                     _ = token.cancelled() => {
                         break;
@@ -88,13 +95,13 @@ impl ManualFsmHandle {
                                         let transition = fsm.on_ping().await;
                                         state = transition.into_state();
                                         let _ = state_tx.send(state);
-                                        sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
+                                        sleep.as_mut().reset(TokioInstant::now() + Duration::from_secs(3153600000));
                                     }
                                     (ManualState::Running, ManualEvent::Pong) => {
                                         let transition = fsm.on_pong().await;
                                         state = transition.into_state();
                                         let _ = state_tx.send(state);
-                                        sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
+                                        sleep.as_mut().reset(TokioInstant::now() + Duration::from_secs(3153600000));
                                     }
                                     _ => {}
                                 }
@@ -123,7 +130,7 @@ fn bench_transitions(c: &mut Criterion) {
     group.bench_function("latency_macro_ping_pong", |b| {
         b.to_async(&rt).iter_custom(|iters| async move {
             let (handle, _task) = MacroFsm::spawn(Context::default());
-            let start = std::time::Instant::now();
+            let start = StdInstant::now();
             for _ in 0..iters {
                 handle.send(MacroFsmEvent::Ping).await.unwrap();
                 handle.wait_for_state(MacroFsmState::Running).await.unwrap();
@@ -137,7 +144,7 @@ fn bench_transitions(c: &mut Criterion) {
     group.bench_function("latency_manual_ping_pong", |b| {
         b.to_async(&rt).iter_custom(|iters| async move {
             let (handle, _task) = ManualFsmHandle::spawn(Context::default());
-            let start = std::time::Instant::now();
+            let start = StdInstant::now();
             for _ in 0..iters {
                 handle.tx.send(ManualEvent::Ping).await.unwrap();
                 let mut rx = handle.state_rx.clone();
@@ -163,7 +170,7 @@ fn bench_transitions(c: &mut Criterion) {
     group.bench_function("throughput_macro_fire", |b| {
         b.to_async(&rt).iter_custom(|iters| async move {
             let (handle, _task) = MacroFsm::spawn(Context::default());
-            let start = std::time::Instant::now();
+            let start = StdInstant::now();
             for _ in 0..iters {
                 handle.send(MacroFsmEvent::Ping).await.unwrap();
             }
@@ -174,7 +181,7 @@ fn bench_transitions(c: &mut Criterion) {
     group.bench_function("throughput_manual_fire", |b| {
         b.to_async(&rt).iter_custom(|iters| async move {
             let (handle, _task) = ManualFsmHandle::spawn(Context::default());
-            let start = std::time::Instant::now();
+            let start = StdInstant::now();
             for _ in 0..iters {
                 handle.tx.send(ManualEvent::Ping).await.unwrap();
             }
