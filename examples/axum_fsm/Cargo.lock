@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-fsm"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "serde",
  "thiserror",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-fsm-macros"
-version = "0.2.2"
+version = "0.3.0"
 dependencies = [
  "darling",
  "humantime",

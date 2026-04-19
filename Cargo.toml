@@ -1,6 +1,6 @@
 [workspace]
-members = [".", "tokio-fsm-macros"]
-exclude = ["examples/axum_fsm"]
+members = [".", "tokio-fsm-macros", "examples/axum_fsm"]
+exclude = []
 resolver = "2"
 
 [workspace.package]
