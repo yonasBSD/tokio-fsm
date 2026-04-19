@@ -101,7 +101,7 @@ async fn create_order(
     };
 
     let context = OrderContext { order };
-    let (handle, _) = OrderFsm::spawn(context);
+    let (handle, _) = OrderFsm::spawn_named(&payload.id, context);
 
     state.orders.lock().await.insert(payload.id.clone(), handle);
 

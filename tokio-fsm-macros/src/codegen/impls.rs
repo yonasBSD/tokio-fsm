@@ -14,19 +14,30 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
 
     quote! {
         pub fn spawn(context: #context_type) -> (#handle_name, #task_name) {
-            Self::spawn_with_token(context, tokio_util::sync::CancellationToken::new())
+            Self::spawn_named_with_token(None, context, ::tokio_fsm::tokio_util::sync::CancellationToken::new())
         }
 
-        pub fn spawn_with_token(context: #context_type, token: tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
+        pub fn spawn_named(name: &str, context: #context_type) -> (#handle_name, #task_name) {
+            Self::spawn_named_with_token(Some(name.to_string()), context, ::tokio_fsm::tokio_util::sync::CancellationToken::new())
+        }
+
+        pub fn spawn_with_token(context: #context_type, token: ::tokio_fsm::tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
+            Self::spawn_named_with_token(None, context, token)
+        }
+
+        pub fn spawn_named_with_token(name: Option<String>, context: #context_type, token: ::tokio_fsm::tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
             let (event_tx, event_rx) = tokio::sync::mpsc::channel(#channel_size);
             let (state_tx, state_rx) = tokio::sync::watch::channel(#state_enum_name::#initial_state);
 
             let fsm = #fsm_name {
                 state: #state_enum_name::#initial_state,
                 context,
+                name: name.clone(), // Clone for the FSM instance
             };
 
+            // CancellationToken is a cheap Arc-clone
             let handle_token = token.clone();
+
             let handle = tokio::spawn(fsm.run(event_rx, token, state_tx));
 
             (
@@ -34,6 +45,7 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
                     event_tx,
                     state_rx,
                     token: handle_token,
+                    name: name, // Move the original name into the handle
                 },
                 #task_name { handle },
             )
@@ -53,7 +65,11 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
 
     let tracing_span = if fsm.tracing {
         quote! {
-            let span = tracing::info_span!("fsm", name = #fsm_name_str);
+            let span = ::tokio_fsm::tracing::info_span!(
+                "fsm",
+                name = #fsm_name_str,
+                fsm_id = self.name.as_deref().unwrap_or("unnamed")
+            );
             let _guard = span.enter();
         }
     } else {
@@ -63,7 +79,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
     let tracing_cancellation = if fsm.tracing {
         quote! {
             #[cfg(feature = "tracing")]
-            tracing::info!("FSM received external cancellation");
+            ::tokio_fsm::tracing::info!("FSM received external cancellation");
         }
     } else {
         quote! {}
@@ -72,7 +88,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
     let unhandled_event_log = if fsm.tracing {
         quote! {
             #[cfg(feature = "tracing")]
-            tracing::warn!(state = ?self.state, event = ?event, "Event dropped: No handler for this state");
+            ::tokio_fsm::tracing::warn!(state = ?self.state, event = ?event, "Event dropped: No handler for this state");
         }
     } else {
         quote! {}
@@ -82,7 +98,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
         async fn run(
             mut self,
             mut events: tokio::sync::mpsc::Receiver<#event_enum_name>,
-            token: tokio_util::sync::CancellationToken,
+            token: ::tokio_fsm::tokio_util::sync::CancellationToken,
             state_tx: tokio::sync::watch::Sender<#state_enum_name>,
         ) -> Result<#context_type, #error_type> {
             #tracing_span
@@ -141,7 +157,7 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
 
             /// Waits for the FSM to reach the specified state.
             pub async fn wait_for_state(&self, target: #state_enum_name) -> Result<(), tokio::sync::watch::error::RecvError> {
-                let mut rx = self.state_rx.clone();
+                let mut rx = self.state_rx.clone(); // Cheap watch::Receiver clone
                 while *rx.borrow_and_update() != target {
                     rx.changed().await?;
                 }
@@ -154,8 +170,13 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
             }
 
             /// Returns the cancellation token for this FSM.
-            pub fn token(&self) -> &tokio_util::sync::CancellationToken {
+            pub fn token(&self) -> &::tokio_fsm::tokio_util::sync::CancellationToken {
                 &self.token
+            }
+
+            /// Returns the name of the FSM instance, if provided.
+            pub fn name(&self) -> Option<&str> {
+                self.name.as_deref()
             }
         }
     }
@@ -230,7 +251,7 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
             let tracing_log = if fsm.tracing {
                 quote! {
                     #[cfg(feature = "tracing")]
-                    tracing::info!(from = ?old_state, to = ?self.state, event = ?event, "Transition successful");
+                    ::tokio_fsm::tracing::info!(from = ?old_state, to = ?self.state, event = ?event, "Transition successful");
                 }
             } else {
                 quote! {}

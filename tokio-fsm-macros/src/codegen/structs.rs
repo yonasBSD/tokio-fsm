@@ -13,6 +13,7 @@ pub fn render_fsm_struct(fsm: &FsmStructure) -> TokenStream {
         pub struct #fsm_name {
             state: #state_enum_name,
             context: #context_type,
+            name: Option<String>,
         }
     }
 }
@@ -28,7 +29,8 @@ pub fn render_handle_struct(fsm: &FsmStructure) -> TokenStream {
         pub struct #handle_name {
             event_tx: tokio::sync::mpsc::Sender<#event_enum_name>,
             state_rx: tokio::sync::watch::Receiver<#state_enum_name>,
-            token: tokio_util::sync::CancellationToken,
+            token: ::tokio_fsm::tokio_util::sync::CancellationToken,
+            name: Option<String>,
         }
     }
 }

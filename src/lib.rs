@@ -96,6 +96,17 @@
 
 mod core;
 
+#[doc(hidden)]
+pub use tokio_util;
+
+#[cfg(feature = "tracing")]
+#[doc(hidden)]
+pub use tracing;
+
+#[cfg(feature = "serde")]
+#[doc(hidden)]
+pub use serde;
+
 #[doc(inline)]
 pub use tokio_fsm_macros::*;
 
