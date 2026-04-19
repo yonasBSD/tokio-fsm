@@ -3,14 +3,62 @@ updates:
   - package-ecosystem: "cargo"
     directory: "/"
     schedule:
-      interval: "daily"
-    open-pull-requests-limit: 10
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Calcutta"
+    open-pull-requests-limit: 5
+    versioning-strategy: "increase-if-necessary"
     labels:
       - "dependencies"
+      - "cargo"
+    commit-message:
+      prefix: "deps"
+    groups:
+      cargo-non-breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  - package-ecosystem: "cargo"
+    directory: "/examples/axum_fsm"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Calcutta"
+    open-pull-requests-limit: 3
+    versioning-strategy: "increase-if-necessary"
+    labels:
+      - "dependencies"
+      - "cargo"
+      - "example"
+    commit-message:
+      prefix: "deps"
+    groups:
+      example-non-breaking:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
 
   - package-ecosystem: "github-actions"
     directory: "/"
     schedule:
-      interval: "daily"
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "Asia/Calcutta"
+    open-pull-requests-limit: 3
     labels:
       - "dependencies"
+      - "github-actions"
+    commit-message:
+      prefix: "ci"
+    groups:
+      github-actions:
+        patterns:
+          - "*"

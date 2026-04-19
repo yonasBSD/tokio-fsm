@@ -1,24 +1,33 @@
 CARGO := "cargo +nightly"
 
-default: fmt lint test
+default: fmt-check lint lint-example test test-example
 
 build:
-    {{ CARGO }} build
+    {{ CARGO }} build --workspace --all-features
 
 test:
-    {{ CARGO }} test
+    {{ CARGO }} test --workspace --all-features
+
+test-example:
+    {{ CARGO }} test --manifest-path examples/axum_fsm/Cargo.toml
 
 lint:
-    {{ CARGO }} clippy -- -D warnings
+    {{ CARGO }} clippy --workspace --all-targets --all-features -- -D warnings
+
+lint-example:
+    {{ CARGO }} clippy --manifest-path examples/axum_fsm/Cargo.toml --all-targets --all-features -- -D warnings
 
 fmt:
-    {{ CARGO }} fmt
+    {{ CARGO }} fmt --all
+
+fmt-check:
+    {{ CARGO }} fmt --all -- --check
 
 clean:
     {{ CARGO }} clean
 
 check:
-    {{ CARGO }} check
+    {{ CARGO }} check --workspace --all-features
 
 release LEVEL="patch":
     {{ CARGO }} release --workspace --execute {{ LEVEL }}

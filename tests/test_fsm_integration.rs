@@ -125,7 +125,8 @@ async fn test_fsm_graceful_shutdown() {
 
     let final_context = task.await.unwrap();
 
-    // In graceful shutdown (via TX drop), it should process all remaining messages in the queue
+    // In graceful shutdown (via TX drop), it should process all remaining messages
+    // in the queue
     assert_eq!(final_context.transition_count, 2);
     assert_eq!(final_context.job_data, vec!["queued"]);
 }

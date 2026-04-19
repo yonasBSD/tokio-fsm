@@ -12,8 +12,9 @@ jobs:
   cargo-assist:
     name: Cargo Assist
     runs-on: ubuntu-latest
-    # Skip forks since the token won't have write permissions.
-    if: ${{ github.event.pull_request.head.repo.fork == false || github.event_name != 'pull_request' }}
+    # Skip forks since the token won't have write permissions and skip Dependabot
+    # PRs where write-back automation adds noise without much value.
+    if: ${{ (github.event.pull_request.head.repo.fork == false || github.event_name != 'pull_request') && github.actor != 'dependabot[bot]' }}
     env:
       RUSTFLAGS: "-D warnings"
     steps:

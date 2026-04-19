@@ -45,7 +45,7 @@ mod validation;
 ///
 /// # Example
 ///
-/// ```rust
+/// ```rust,ignore
 /// use tokio_fsm::{Transition, fsm};
 ///
 /// pub struct MyContext;

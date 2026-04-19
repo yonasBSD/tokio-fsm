@@ -6,27 +6,61 @@ on:
   pull_request:
     branches: [ "main" ]
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build:
+  fmt:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
-    
-    - uses: swatinem/rust-cache@v2
-    
-    - name: Install nightly toolchain
-      uses: dtolnay/rust-toolchain@nightly
-      with:
-        components: rustfmt, clippy
+      - uses: actions/checkout@v6
 
-    - name: Check Formatting
-      run: cargo fmt --all -- --check
+      - uses: swatinem/rust-cache@v2
 
-    - name: Clippy
-      run: cargo clippy -- -D warnings
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: rustfmt
 
-    - name: Run Tests
-      run: cargo test --verbose
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  workspace:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Lint workspace
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Test workspace
+        run: cargo test --workspace --all-features --verbose
+
+  axum-example:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: swatinem/rust-cache@v2
+
+      - name: Install stable toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Lint axum example
+        run: cargo clippy --manifest-path examples/axum_fsm/Cargo.toml --all-targets --all-features -- -D warnings
+
+      - name: Test axum example
+        run: cargo test --manifest-path examples/axum_fsm/Cargo.toml --verbose

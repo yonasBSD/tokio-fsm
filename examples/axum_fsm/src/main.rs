@@ -8,8 +8,11 @@ use axum::{
     routing::{get, post},
 };
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
-use tokio::time::{Duration, sleep};
+use serde_json::json;
+use tokio::{
+    sync::Mutex,
+    time::{Duration, sleep},
+};
 use tokio_fsm::{Transition, fsm};
 
 // --- DOMAIN TYPES ---
@@ -114,10 +117,10 @@ async fn validate_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id) {
-        if handle.send(OrderFsmEvent::Validate).await.is_ok() {
-            return (StatusCode::OK, Json("Validation started"));
-        }
+    if let Some(handle) = orders.get_mut(&id)
+        && handle.send(OrderFsmEvent::Validate).await.is_ok()
+    {
+        return (StatusCode::OK, Json("Validation started"));
     }
     (StatusCode::NOT_FOUND, Json("Order not found or closed"))
 }
@@ -127,10 +130,10 @@ async fn charge_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id) {
-        if handle.send(OrderFsmEvent::Charge).await.is_ok() {
-            return (StatusCode::OK, Json("Charging started"));
-        }
+    if let Some(handle) = orders.get_mut(&id)
+        && handle.send(OrderFsmEvent::Charge).await.is_ok()
+    {
+        return (StatusCode::OK, Json("Charging started"));
     }
     (StatusCode::NOT_FOUND, Json("Order not found or closed"))
 }
@@ -140,10 +143,10 @@ async fn ship_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id) {
-        if handle.send(OrderFsmEvent::Ship).await.is_ok() {
-            return (StatusCode::OK, Json("Shipping started"));
-        }
+    if let Some(handle) = orders.get_mut(&id)
+        && handle.send(OrderFsmEvent::Ship).await.is_ok()
+    {
+        return (StatusCode::OK, Json("Shipping started"));
     }
     (StatusCode::NOT_FOUND, Json("Order not found or closed"))
 }
@@ -156,9 +159,12 @@ async fn get_order_status(
     if let Some(handle) = orders.get(&id) {
         // tokio-fsm handles expose current_state() synchronously if it's available
         let state = handle.current_state();
-        return (StatusCode::OK, Json(serde_json::to_value(state).unwrap()));
+        return (StatusCode::OK, Json(json!(state)));
     }
-    (StatusCode::NOT_FOUND, Json("Order not found".to_string()))
+    (
+        StatusCode::NOT_FOUND,
+        Json(json!({ "error": "Order not found" })),
+    )
 }
 
 // --- MAIN ---

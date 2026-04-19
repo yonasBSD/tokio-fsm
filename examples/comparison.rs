@@ -1,7 +1,9 @@
 //! Example: Comparing Manual FSM Implementation vs. tokio-fsm Macro
 
-use tokio::sync::{mpsc, watch};
-use tokio::task::JoinHandle;
+use tokio::{
+    sync::{mpsc, watch},
+    task::JoinHandle,
+};
 use tokio_fsm::{Transition, fsm};
 
 // --- SHARED DOMAIN LOGIC ---
@@ -53,14 +55,11 @@ impl ManualFsm {
                 tokio::select! {
                     event = rx.recv() => {
                         let Some(event) = event else { break };
-                        match (fsm.state, event) {
-                            (ManualState::Idle, ManualEvent::Start(job)) => {
-                                println!("Manual: Starting job {}", job.id);
-                                fsm.context.count += 1;
-                                fsm.state = ManualState::Processing;
-                                let _ = state_tx.send(fsm.state);
-                            }
-                            _ => {}
+                        if let (ManualState::Idle, ManualEvent::Start(job)) = (fsm.state, event) {
+                            println!("Manual: Starting job {}", job.id);
+                            fsm.context.count += 1;
+                            fsm.state = ManualState::Processing;
+                            let _ = state_tx.send(fsm.state);
                         }
                     }
                 }

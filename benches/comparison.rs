@@ -1,6 +1,6 @@
-use criterion::{Criterion, criterion_group, criterion_main};
 use std::time::Instant as StdInstant;
 
+use criterion::{Criterion, criterion_group, criterion_main};
 use tokio::{
     sync::{mpsc, watch},
     task::JoinHandle,

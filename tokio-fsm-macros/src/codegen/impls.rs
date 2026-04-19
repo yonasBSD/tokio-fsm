@@ -78,7 +78,6 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
 
     let tracing_cancellation = if fsm.tracing {
         quote! {
-            #[cfg(feature = "tracing")]
             ::tokio_fsm::tracing::info!("FSM received external cancellation");
         }
     } else {
@@ -87,7 +86,6 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
 
     let unhandled_event_log = if fsm.tracing {
         quote! {
-            #[cfg(feature = "tracing")]
             ::tokio_fsm::tracing::warn!(state = ?self.state, event = ?event, "Event dropped: No handler for this state");
         }
     } else {
@@ -120,7 +118,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
                         let Some(event) = event else { break };
                         match (self.state, event) {
                             #(#event_arms)*
-                            _ => {
+                            (state, event) => {
                                 #unhandled_event_log
                             }
                         }
@@ -226,6 +224,7 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
     for handler in &fsm.handlers {
         if let Some(ref event) = handler.event {
             let event_name = &event.name;
+            let event_name_str = event_name.to_string();
             let method_name = &handler.method.sig.ident;
 
             // Timeout reset logic
@@ -250,8 +249,7 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
 
             let tracing_log = if fsm.tracing {
                 quote! {
-                    #[cfg(feature = "tracing")]
-                    ::tokio_fsm::tracing::info!(from = ?old_state, to = ?self.state, event = ?event, "Transition successful");
+                    ::tokio_fsm::tracing::info!(from = ?old_state, to = ?self.state, event = #event_name_str, "Transition successful");
                 }
             } else {
                 quote! {}
