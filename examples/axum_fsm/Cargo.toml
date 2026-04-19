@@ -1,12 +1,12 @@
 [package]
 name = "axum_fsm"
-version = "0.3.1"
+version = "0.3.2"
 edition = "2024"
 publish = false
 
 
 [dependencies]
-tokio-fsm = { version = "0.3.1", path = "../../", features = [
+tokio-fsm = { version = "0.3.2", path = "../../", features = [
     "serde",
     "tracing",
 ] }
