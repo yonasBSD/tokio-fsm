@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use syn::ItemImpl;
+use syn::{ImplItem, ItemImpl};
 
 use crate::validation::FsmStructure;
 
@@ -31,19 +31,19 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
     let task_drop = impls::render_task_drop(fsm);
 
     // Strip macro attributes from original methods, remove associated types
-    let cleaned_items: Vec<syn::ImplItem> = original_methods
+    let cleaned_items: Vec<ImplItem> = original_methods
         .iter()
         .filter_map(|item| match item {
-            syn::ImplItem::Fn(method) => {
+            ImplItem::Fn(method) => {
                 let mut method = method.clone();
                 method.attrs.retain(|attr| {
                     !attr.path().is_ident("on")
                         && !attr.path().is_ident("state_timeout")
                         && !attr.path().is_ident("on_timeout")
                 });
-                Some(syn::ImplItem::Fn(method))
+                Some(ImplItem::Fn(method))
             }
-            syn::ImplItem::Type(_) => None,
+            ImplItem::Type(_) => None,
             _ => Some(item.clone()),
         })
         .collect();

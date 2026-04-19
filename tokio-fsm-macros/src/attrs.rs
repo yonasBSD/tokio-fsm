@@ -1,6 +1,6 @@
 //! Attribute parsing for FSM macro.
 
-use darling::FromMeta;
+use darling::{Error, FromMeta, Result};
 use syn::{Ident, LitStr};
 
 /// Arguments for the `#[fsm]` attribute.
@@ -26,11 +26,9 @@ fn default_channel_size() -> usize {
     100
 }
 
-fn validate_channel_size(size: usize) -> darling::Result<usize> {
+fn validate_channel_size(size: usize) -> Result<usize> {
     if size == 0 {
-        return Err(darling::Error::custom(
-            "channel_size must be greater than 0",
-        ));
+        return Err(Error::custom("channel_size must be greater than 0"));
     }
     Ok(size)
 }
