@@ -79,10 +79,9 @@ impl OrderFsm {
 // --- API STATE ---
 
 struct AppState {
-    // Map of OrderID -> FSM Handle
-    // In a real app, you might use a DB and reconstruct FSMs, or use an actor registry.
-    // For this demo, we keep handles in memory.
-    orders: Mutex<HashMap<String, OrderFsmHandle>>,
+    // Map of OrderID -> (FSM Handle, FSM Task)
+    // We MUST store the Task handle, otherwise the FSM will be aborted when the task handle is dropped.
+    orders: Mutex<HashMap<String, (OrderFsmHandle, OrderFsmTask)>>,
 }
 
 // --- AXUM HANDLERS ---
@@ -105,9 +104,13 @@ async fn create_order(
     };
 
     let context = OrderContext { order };
-    let (handle, _) = OrderFsm::spawn_named(&payload.id, context);
+    let (handle, task) = OrderFsm::spawn_named(&payload.id, context);
 
-    state.orders.lock().await.insert(payload.id.clone(), handle);
+    state
+        .orders
+        .lock()
+        .await
+        .insert(payload.id.clone(), (handle, task));
 
     (StatusCode::CREATED, Json("Order created"))
 }
@@ -117,7 +120,7 @@ async fn validate_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id)
+    if let Some((handle, _)) = orders.get_mut(&id)
         && handle.send(OrderFsmEvent::Validate).await.is_ok()
     {
         return (StatusCode::OK, Json("Validation started"));
@@ -130,7 +133,7 @@ async fn charge_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id)
+    if let Some((handle, _)) = orders.get_mut(&id)
         && handle.send(OrderFsmEvent::Charge).await.is_ok()
     {
         return (StatusCode::OK, Json("Charging started"));
@@ -143,7 +146,7 @@ async fn ship_order(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let mut orders = state.orders.lock().await;
-    if let Some(handle) = orders.get_mut(&id)
+    if let Some((handle, _)) = orders.get_mut(&id)
         && handle.send(OrderFsmEvent::Ship).await.is_ok()
     {
         return (StatusCode::OK, Json("Shipping started"));
@@ -156,7 +159,7 @@ async fn get_order_status(
     State(state): State<Arc<AppState>>,
 ) -> impl IntoResponse {
     let orders = state.orders.lock().await;
-    if let Some(handle) = orders.get(&id) {
+    if let Some((handle, _)) = orders.get(&id) {
         // tokio-fsm handles expose current_state() synchronously if it's available
         let state = handle.current_state();
         return (StatusCode::OK, Json(json!(state)));

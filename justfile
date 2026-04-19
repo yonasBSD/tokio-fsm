@@ -37,3 +37,6 @@ release-dry-run LEVEL="patch":
 
 doc:
     {{ CARGO }} doc --no-deps --open
+
+run-axum:
+    RUSTFLAGS="--cfg tokio_unstable" {{ CARGO }} run --manifest-path examples/axum_fsm/Cargo.toml

@@ -204,9 +204,19 @@ pub fn render_task_impl(fsm: &FsmStructure) -> TokenStream {
 pub fn render_task_drop(fsm: &FsmStructure) -> TokenStream {
     let task_name = fsm.task_ident();
 
+    let abort_log = if fsm.tracing {
+        let fsm_name = fsm.fsm_name.to_string();
+        quote! {
+            ::tokio_fsm::tracing::warn!(fsm = #fsm_name, "FSM task dropped before completion; aborting execution. Did you forget to retain the task handle?");
+        }
+    } else {
+        quote! {}
+    };
+
     quote! {
         impl Drop for #task_name {
             fn drop(&mut self) {
+                #abort_log
                 self.handle.abort();
             }
         }
