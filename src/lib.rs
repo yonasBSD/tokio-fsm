@@ -25,7 +25,7 @@
 //!
 //! ### States & Events
 //! States and Events are **discovered** automatically from your `#[on]`
-//! handlers. You don't need to manually define enums for them—the macro
+//! handlers. You don't need to manually define enums for them, the macro
 //! generates a `[FsmName]State` and `[FsmName]Event` enum for you.
 //!
 //! ### Context
