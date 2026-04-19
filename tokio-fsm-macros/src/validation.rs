@@ -128,7 +128,7 @@ impl FsmStructure {
         // Parse methods
         let mut handlers = Vec::new();
         let mut event_names: Vec<Ident> = Vec::new();
-        let mut events = Vec::new();
+        let mut events: Vec<Event> = Vec::new();
         let mut state_names: Vec<Ident> = Vec::new();
 
         state_names.push(initial_state.clone());
@@ -151,12 +151,32 @@ impl FsmStructure {
                     }
                 }
 
-                // Collect events
-                if let Some(ref event) = handler.event
-                    && !event_names.iter().any(|s| s == &event.name)
-                {
-                    event_names.push(event.name.clone());
-                    events.push(event.clone());
+                // Collect events and validate payload consistency
+                if let Some(ref event) = handler.event {
+                    if let Some(existing_event) = events.iter().find(|e| e.name == event.name) {
+                        if existing_event.payload_type != event.payload_type {
+                            let expected = existing_event
+                                .payload_type
+                                .as_ref()
+                                .map(|ty| quote::quote!(#ty).to_string())
+                                .unwrap_or_else(|| "None".to_string());
+                            let actual = event
+                                .payload_type
+                                .as_ref()
+                                .map(|ty| quote::quote!(#ty).to_string())
+                                .unwrap_or_else(|| "None".to_string());
+                            return Err(Error::new_spanned(
+                                &event.name,
+                                format!(
+                                    "Event '{}' has inconsistent payload types across handlers: expected '{}', found '{}'",
+                                    event.name, expected, actual
+                                ),
+                            ));
+                        }
+                    } else {
+                        event_names.push(event.name.clone());
+                        events.push(event.clone());
+                    }
                 }
 
                 handlers.push(handler);
@@ -208,6 +228,37 @@ impl FsmStructure {
             )
         })?;
 
+        // 1. Validate timeout contract
+        let timeout_handlers: Vec<_> = self
+            .handlers
+            .iter()
+            .filter(|h| h.is_timeout_handler)
+            .collect();
+        if timeout_handlers.len() > 1 {
+            return Err(syn::Error::new_spanned(
+                &timeout_handlers[1].method.sig.ident,
+                "Multiple #[on_timeout] handlers are not allowed",
+            ));
+        }
+        let has_timeout_handler = !timeout_handlers.is_empty();
+
+        // 2. Identify states that arm a timeout
+        let mut states_with_timeout = std::collections::HashSet::new();
+        for handler in &self.handlers {
+            if handler.timeout.is_some() {
+                if !has_timeout_handler {
+                    return Err(syn::Error::new_spanned(
+                        &handler.method.sig.ident,
+                        "#[state_timeout] requires an #[on_timeout] handler",
+                    ));
+                }
+                for target in &handler.return_states {
+                    states_with_timeout.insert(&target.name);
+                }
+            }
+        }
+
+        // 3. Build reachability graph
         for handler in &self.handlers {
             for target in &handler.return_states {
                 let target_node = nodes.get(&target.name).ok_or_else(|| {
@@ -220,11 +271,11 @@ impl FsmStructure {
                     )
                 })?;
 
-                if handler.source_states.is_empty() {
-                    // Timeout handlers have no source states — they can fire from any
-                    // state that has a timeout. Add edges from all states.
-                    for &source_node in nodes.values() {
-                        graph.add_edge(source_node, *target_node, ());
+                if handler.is_timeout_handler {
+                    // Timeout handlers only fire from states that have a timeout armed.
+                    for &state_name in &states_with_timeout {
+                        let source_node = nodes.get(state_name).unwrap();
+                        graph.add_edge(*source_node, *target_node, ());
                     }
                 } else {
                     // State-gated: add edges only from declared source states
@@ -264,7 +315,7 @@ impl FsmStructure {
 impl Handler {
     /// Parse a method into a Handler with all semantic fields derived.
     fn parse(method: &syn::ImplItemFn) -> syn::Result<Self> {
-        let mut event = None;
+        let mut event: Option<Event> = None;
         let mut is_timeout_handler = false;
         let mut state_timeout_attr = None;
         let mut source_states = Vec::new();
@@ -284,7 +335,17 @@ impl Handler {
                 };
                 // Multiple #[on(...)] attributes are allowed for multi-state handlers
                 source_states.push(on_attr.state);
-                if event.is_none() {
+                if let Some(ref existing_event) = event {
+                    if existing_event.name != on_attr.event {
+                        return Err(Error::new_spanned(
+                            &on_attr.event,
+                            format!(
+                                "Handler method '{}' handles multiple different events: '{}' and '{}'",
+                                method.sig.ident, existing_event.name, on_attr.event
+                            ),
+                        ));
+                    }
+                } else {
                     event = Some(Event {
                         name: on_attr.event,
                         payload_type,

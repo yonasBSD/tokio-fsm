@@ -1,0 +1,13 @@
+error: Handler method 'start_or_stop' handles multiple different events: 'Start' and 'Stop'
+  --> tests/ui/mixed_events.rs:14:35
+   |
+14 |     #[on(state = Running, event = Stop)]
+   |                                   ^^^^
+
+warning: unused import: `Transition`
+ --> tests/ui/mixed_events.rs:1:17
+  |
+1 | use tokio_fsm::{Transition, fsm};
+  |                 ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
