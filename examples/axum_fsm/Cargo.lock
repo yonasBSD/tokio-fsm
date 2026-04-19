@@ -125,7 +125,7 @@ dependencies = [
 
 [[package]]
 name = "axum_fsm"
-version = "0.1.0"
+version = "0.3.2"
 dependencies = [
  "axum",
  "console-subscriber",
@@ -1094,7 +1094,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-fsm"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "serde",
  "thiserror",
@@ -1106,7 +1106,7 @@ dependencies = [
 
 [[package]]
 name = "tokio-fsm-macros"
-version = "0.3.0"
+version = "0.3.2"
 dependencies = [
  "darling",
  "humantime",

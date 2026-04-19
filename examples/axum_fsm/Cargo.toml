@@ -5,11 +5,10 @@ edition = "2024"
 publish = false
 
 
+[workspace]
+
 [dependencies]
-tokio-fsm = { version = "0.3.2", path = "../../", features = [
-    "serde",
-    "tracing",
-] }
+tokio-fsm = { path = "../../", features = ["serde", "tracing"] }
 axum = "0.7"
 tokio = { version = "1.0", features = ["full"] }
 serde = { version = "1.0", features = ["derive"] }
