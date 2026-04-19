@@ -58,10 +58,19 @@ async fn main() {
     // Events are generated as an enum: [FsmName]Event
     handle.send(MyFsmEvent::Start).await.unwrap();
     
-    handle.shutdown_graceful();
+    // Graceful shutdown
+    handle.shutdown();
     let final_context = task.await.unwrap();
 }
 ```
+
+## Lifecycle and Ownership
+
+`tokio-fsm` uses a deterministic lifecycle model:
+- **Spawn**: Spawning an FSM returns a `Handle` and a `Task`.
+- **Ownership**: The `Task` must be retained! Spawning is marked `#[must_use]`.
+- **Abortion**: If the `Task` handle is dropped, the FSM is aborted immediately. This ensures that resources are not leaked if the caller crashes or forgets to shut down.
+- **Graceful Shutdown**: Call `handle.shutdown()` and `await` the `Task` to retrieve the final context.
 
 ## Production Example: Axum Order Processing
 

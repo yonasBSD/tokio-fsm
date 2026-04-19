@@ -37,10 +37,17 @@
 //! state the FSM should move to. The macro validates that `NextState` is a
 //! known state and that the transition is reachable.
 //!
-//! ### Timeouts
-//! `tokio-fsm` supports state-level timeouts via `#[state_timeout]`. These are
-//! implemented using single, stack-pinned `tokio::time::Sleep` futures,
-//! ensuring zero heap allocations during transitions.
+//! ### Lifecycle & Ownership
+//!
+//! `tokio-fsm` uses a deterministic lifecycle model:
+//! - **Spawn**: Spawning an FSM returns a `Handle` and a `Task`.
+//! - **Ownership**: The `Task` must be retained! Spawning is marked
+//!   `#[must_use]`.
+//! - **Abortion**: If the `Task` handle is dropped, the FSM is aborted
+//!   immediately. This ensures that resources are not leaked if the caller
+//!   crashes or forgets to shut down.
+//! - **Graceful Shutdown**: Call `handle.shutdown()` and `await` the `Task` to
+//!   retrieve the final context.
 //!
 //! ## Architecture
 //!

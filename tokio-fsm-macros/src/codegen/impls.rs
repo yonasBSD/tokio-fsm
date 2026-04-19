@@ -13,18 +13,22 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
     let context_type = &fsm.context_type;
 
     quote! {
+        #[must_use = "FSM task must be retained or it will be aborted immediately"]
         pub fn spawn(context: #context_type) -> (#handle_name, #task_name) {
             Self::spawn_named_with_token(None, context, ::tokio_fsm::tokio_util::sync::CancellationToken::new())
         }
 
+        #[must_use = "FSM task must be retained or it will be aborted immediately"]
         pub fn spawn_named(name: &str, context: #context_type) -> (#handle_name, #task_name) {
             Self::spawn_named_with_token(Some(name.to_string()), context, ::tokio_fsm::tokio_util::sync::CancellationToken::new())
         }
 
+        #[must_use = "FSM task must be retained or it will be aborted immediately"]
         pub fn spawn_with_token(context: #context_type, token: ::tokio_fsm::tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
             Self::spawn_named_with_token(None, context, token)
         }
 
+        #[must_use = "FSM task must be retained or it will be aborted immediately"]
         pub fn spawn_named_with_token(name: Option<String>, context: #context_type, token: ::tokio_fsm::tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
             let (event_tx, event_rx) = tokio::sync::mpsc::channel(#channel_size);
             let (state_tx, state_rx) = tokio::sync::watch::channel(#state_enum_name::#initial_state);

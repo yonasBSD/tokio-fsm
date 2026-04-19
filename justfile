@@ -17,6 +17,8 @@ lint:
 lint-example:
     {{ CARGO }} clippy --manifest-path examples/axum_fsm/Cargo.toml --all-targets --all-features -- -D warnings
 
+lint-all: lint lint-example
+
 fmt:
     {{ CARGO }} fmt --all
 

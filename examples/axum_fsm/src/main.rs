@@ -76,12 +76,39 @@ impl OrderFsm {
     }
 }
 
-// --- API STATE ---
+// --- API STATE & ERRORS ---
+
+#[derive(Debug)]
+enum AppError {
+    NotFound,
+    FsmClosed,
+}
+
+impl IntoResponse for AppError {
+    fn into_response(self) -> axum::response::Response {
+        let (status, message) = match self {
+            AppError::NotFound => (StatusCode::NOT_FOUND, "Order not found"),
+            AppError::FsmClosed => (StatusCode::GONE, "Order FSM is already closed"),
+        };
+        (status, Json(json!({ "error": message }))).into_response()
+    }
+}
 
 struct AppState {
     // Map of OrderID -> (FSM Handle, FSM Task)
-    // We MUST store the Task handle, otherwise the FSM will be aborted when the task handle is dropped.
     orders: Mutex<HashMap<String, (OrderFsmHandle, OrderFsmTask)>>,
+}
+
+impl AppState {
+    async fn send_event(&self, id: &str, event: OrderFsmEvent) -> Result<(), AppError> {
+        let handle = {
+            let orders = self.orders.lock().await;
+            orders.get(id).map(|(h, _)| h.clone())
+        }
+        .ok_or(AppError::NotFound)?;
+
+        handle.send(event).await.map_err(|_| AppError::FsmClosed)
+    }
 }
 
 // --- AXUM HANDLERS ---
@@ -112,62 +139,69 @@ async fn create_order(
         .await
         .insert(payload.id.clone(), (handle, task));
 
-    (StatusCode::CREATED, Json("Order created"))
+    (
+        StatusCode::CREATED,
+        Json(json!({ "status": "Order created" })),
+    )
 }
 
 async fn validate_order(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let mut orders = state.orders.lock().await;
-    if let Some((handle, _)) = orders.get_mut(&id)
-        && handle.send(OrderFsmEvent::Validate).await.is_ok()
-    {
-        return (StatusCode::OK, Json("Validation started"));
-    }
-    (StatusCode::NOT_FOUND, Json("Order not found or closed"))
+) -> Result<impl IntoResponse, AppError> {
+    state.send_event(&id, OrderFsmEvent::Validate).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "status": "Validation started" })),
+    ))
 }
 
 async fn charge_order(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let mut orders = state.orders.lock().await;
-    if let Some((handle, _)) = orders.get_mut(&id)
-        && handle.send(OrderFsmEvent::Charge).await.is_ok()
-    {
-        return (StatusCode::OK, Json("Charging started"));
-    }
-    (StatusCode::NOT_FOUND, Json("Order not found or closed"))
+) -> Result<impl IntoResponse, AppError> {
+    state.send_event(&id, OrderFsmEvent::Charge).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "status": "Charging started" })),
+    ))
 }
 
 async fn ship_order(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
-    let mut orders = state.orders.lock().await;
-    if let Some((handle, _)) = orders.get_mut(&id)
-        && handle.send(OrderFsmEvent::Ship).await.is_ok()
-    {
-        return (StatusCode::OK, Json("Shipping started"));
-    }
-    (StatusCode::NOT_FOUND, Json("Order not found or closed"))
+) -> Result<impl IntoResponse, AppError> {
+    state.send_event(&id, OrderFsmEvent::Ship).await?;
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "status": "Shipping started" })),
+    ))
 }
 
 async fn get_order_status(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let orders = state.orders.lock().await;
-    if let Some((handle, _)) = orders.get(&id) {
-        // tokio-fsm handles expose current_state() synchronously if it's available
-        let state = handle.current_state();
-        return (StatusCode::OK, Json(json!(state)));
-    }
-    (
-        StatusCode::NOT_FOUND,
-        Json(json!({ "error": "Order not found" })),
-    )
+    let (handle, _) = orders.get(&id).ok_or(AppError::NotFound)?;
+    let state = handle.current_state();
+    Ok((StatusCode::OK, Json(json!({ "state": state }))))
+}
+
+async fn stop_order(
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, AppError> {
+    let mut orders = state.orders.lock().await;
+    let (handle, task) = orders.remove(&id).ok_or(AppError::NotFound)?;
+
+    handle.shutdown();
+    let _ = task.await; // Wait for the FSM task to finish gracefully
+
+    Ok((
+        StatusCode::OK,
+        Json(json!({ "status": "Order stopped and cleaned up" })),
+    ))
 }
 
 // --- MAIN ---
@@ -199,6 +233,7 @@ async fn main() {
         .route("/orders/:id/validate", post(validate_order))
         .route("/orders/:id/charge", post(charge_order))
         .route("/orders/:id/ship", post(ship_order))
+        .route("/orders/:id/stop", post(stop_order))
         .route("/orders/:id", get(get_order_status))
         .with_state(app_state);
 

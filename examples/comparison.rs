@@ -102,10 +102,14 @@ async fn main() {
 
     println!("\n=== MACRO FSM ===");
     let macro_ctx = Context { count: 0 };
-    let (macro_handle, _macro_task) = MacroFsm::spawn(macro_ctx);
+    let (macro_handle, task) = MacroFsm::spawn(macro_ctx);
     macro_handle
         .send(MacroFsmEvent::Start(Job { id: 1 }))
         .await
         .unwrap();
     println!("Macro state: {:?}", macro_handle.current_state());
+
+    // Explicitly shutdown to allow the task to complete
+    macro_handle.shutdown();
+    let _ = task.await;
 }
