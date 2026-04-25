@@ -1,5 +1,7 @@
-use std::collections::{HashMap, HashSet};
-use std::time::Duration;
+use std::{
+    collections::{HashMap, HashSet},
+    time::Duration,
+};
 
 use petgraph::{
     algo::has_path_connecting,

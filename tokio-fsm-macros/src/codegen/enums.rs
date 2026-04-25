@@ -25,20 +25,26 @@ pub fn render_state_enum(fsm: &FsmStructure) -> TokenStream {
         })
         .collect();
 
-    let serde_derive = if fsm.serde {
-        quote! { ::tokio_fsm::__tokio_fsm_serde_derive!(); }
-    } else {
-        quote! {}
-    };
+    if fsm.serde {
+        quote! {
+            ::tokio_fsm::__tokio_fsm_serde_derive! {
+                #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+                pub enum #state_enum_name {
+                    #(#states,)*
+                }
+            }
 
-    quote! {
-        #serde_derive
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-        pub enum #state_enum_name {
-            #(#states,)*
+            #(#state_structs)*
         }
+    } else {
+        quote! {
+            #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+            pub enum #state_enum_name {
+                #(#states,)*
+            }
 
-        #(#state_structs)*
+            #(#state_structs)*
+        }
     }
 }
 
@@ -58,17 +64,21 @@ pub fn render_event_enum(fsm: &FsmStructure) -> TokenStream {
 
     let event_enum_name = fsm.event_enum_ident();
 
-    let serde_derive = if fsm.serde {
-        quote! { ::tokio_fsm::__tokio_fsm_serde_derive!(); }
+    if fsm.serde {
+        quote! {
+            ::tokio_fsm::__tokio_fsm_serde_derive! {
+                #[derive(Debug, Clone)]
+                pub enum #event_enum_name {
+                    #(#variants)*
+                }
+            }
+        }
     } else {
-        quote! {}
-    };
-
-    quote! {
-        #serde_derive
-        #[derive(Debug, Clone)]
-        pub enum #event_enum_name {
-            #(#variants)*
+        quote! {
+            #[derive(Debug, Clone)]
+            pub enum #event_enum_name {
+                #(#variants)*
+            }
         }
     }
 }

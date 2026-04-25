@@ -34,8 +34,8 @@ mod validation;
 ///   payloads.
 /// * `WorkerFsmHandle`: A cloneable handle used to interact with the FSM (send
 ///   events, query state).
-/// * `WorkerFsmTask`: A [`Future`](std::future::Future) that must be awaited to run the FSM. Resolves
-///   to `Result<Context, TaskError<E>>`.
+/// * `WorkerFsmTask`: A [`Future`](std::future::Future) that must be awaited to
+///   run the FSM. Resolves to `Result<Context, TaskError<E>>`.
 ///
 /// # Handlers & Attributes
 ///

@@ -9,9 +9,8 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 
-use crate::validation::FsmStructure;
-
 use super::helpers::{render_cancellable_call, render_transition_dispatch};
+use crate::validation::FsmStructure;
 
 pub fn render_run(fsm: &FsmStructure) -> TokenStream {
     let event_enum_name = fsm.event_enum_ident();

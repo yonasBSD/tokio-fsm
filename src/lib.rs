@@ -20,8 +20,9 @@ pub use tracing;
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __tokio_fsm_serde_derive {
-    () => {
+    ($($t:tt)*) => {
         #[derive(::tokio_fsm::serde::Serialize, ::tokio_fsm::serde::Deserialize)]
+        $($t)*
     };
 }
 
@@ -29,8 +30,9 @@ macro_rules! __tokio_fsm_serde_derive {
 #[doc(hidden)]
 #[macro_export]
 macro_rules! __tokio_fsm_serde_derive {
-    () => {
+    ($($t:tt)*) => {
         compile_error!("`#[fsm(serde = true)]` requires enabling the `serde` feature on the `tokio-fsm` dependency");
+        $($t)*
     };
 }
 
