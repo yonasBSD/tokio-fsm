@@ -82,6 +82,7 @@ impl OrderFsm {
 enum AppError {
     NotFound,
     FsmClosed,
+    AlreadyExists,
 }
 
 impl IntoResponse for AppError {
@@ -89,6 +90,7 @@ impl IntoResponse for AppError {
         let (status, message) = match self {
             AppError::NotFound => (StatusCode::NOT_FOUND, "Order not found"),
             AppError::FsmClosed => (StatusCode::GONE, "Order FSM is already closed"),
+            AppError::AlreadyExists => (StatusCode::CONFLICT, "Order already exists"),
         };
         (status, Json(json!({ "error": message }))).into_response()
     }
@@ -123,7 +125,7 @@ struct CreateOrderRequest {
 async fn create_order(
     State(state): State<Arc<AppState>>,
     Json(payload): Json<CreateOrderRequest>,
-) -> impl IntoResponse {
+) -> Result<impl IntoResponse, AppError> {
     let order = Order {
         id: payload.id.clone(),
         items: payload.items,
@@ -133,16 +135,16 @@ async fn create_order(
     let context = OrderContext { order };
     let (handle, task) = OrderFsm::spawn_named(&payload.id, context);
 
-    state
-        .orders
-        .lock()
-        .await
-        .insert(payload.id.clone(), (handle, task));
+    let mut orders = state.orders.lock().await;
+    if orders.contains_key(&payload.id) {
+        return Err(AppError::AlreadyExists);
+    }
+    orders.insert(payload.id.clone(), (handle, task));
 
-    (
+    Ok((
         StatusCode::CREATED,
         Json(json!({ "status": "Order created" })),
-    )
+    ))
 }
 
 async fn validate_order(
@@ -192,8 +194,10 @@ async fn stop_order(
     Path(id): Path<String>,
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, AppError> {
-    let mut orders = state.orders.lock().await;
-    let (handle, task) = orders.remove(&id).ok_or(AppError::NotFound)?;
+    let (handle, task) = {
+        let mut orders = state.orders.lock().await;
+        orders.remove(&id).ok_or(AppError::NotFound)?
+    };
 
     handle.shutdown();
     let _ = task.await; // Wait for the FSM task to finish gracefully

@@ -23,7 +23,7 @@ To enable **tokio-console**, the application must be compiled with unstable flag
 
 ```bash
 # Set RUST_LOG to see the info/debug logs we added
-RUST_LOG=info RUSTFLAGS="--cfg tokio_unstable" cargo run -p axum_fsm
+RUST_LOG=info RUSTFLAGS="--cfg tokio_unstable" cargo run --manifest-path examples/axum_fsm/Cargo.toml
 ```
 
 ### 2. Monitor with tokio-console
@@ -44,7 +44,9 @@ Drive the state machine with high concurrency and watch the tasks in the console
 ## API Endpoints
 
 - `POST /orders`: Create a new order (Payload: `{"id": "...", "items": [...], "total": 100}`)
+  - Returns `409 Conflict` if the order ID already exists.
 - `POST /orders/:id/validate`: Drive to `Validated`
 - `POST /orders/:id/charge`: Drive to `Charged`
 - `POST /orders/:id/ship`: Drive to `Shipped`
+- `POST /orders/:id/stop`: Gracefully stop and clean up an order FSM
 - `GET /orders/:id`: Query current state
