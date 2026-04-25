@@ -4,8 +4,8 @@ use std::{
 };
 
 use petgraph::{
-    algo::has_path_connecting,
     graph::{DiGraph, NodeIndex},
+    visit::Dfs,
 };
 use syn::Ident;
 
@@ -86,7 +86,12 @@ impl FsmStructure {
 
                 if handler.is_timeout_handler {
                     for &state_name in states_with_timeout {
-                        let source_node = nodes.get(state_name).unwrap();
+                        let source_node = nodes.get(state_name).ok_or_else(|| {
+                            syn::Error::new_spanned(
+                                state_name,
+                                "Internal error: timeout source state not found",
+                            )
+                        })?;
                         graph.add_edge(*source_node, *target_node, ());
                     }
                 } else {
@@ -108,8 +113,14 @@ impl FsmStructure {
         initial_node: &NodeIndex,
         nodes: &HashMap<&Ident, NodeIndex>,
     ) -> syn::Result<()> {
+        let mut dfs = Dfs::new(graph, *initial_node);
+        let mut reachable = HashSet::new();
+        while let Some(node) = dfs.next(graph) {
+            reachable.insert(node);
+        }
+
         for (&name, &node) in nodes {
-            if !has_path_connecting(graph, *initial_node, node, None) {
+            if !reachable.contains(&node) {
                 return Err(syn::Error::new_spanned(
                     name,
                     format!(

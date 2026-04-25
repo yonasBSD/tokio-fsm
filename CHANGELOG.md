@@ -5,20 +5,14 @@ All notable user-facing changes to `tokio-fsm` will be documented in this file.
 ## Unreleased
 
 ### Fixed
-- Handler errors now propagate as `TaskError::Fsm(E)` for handlers that return `Result<Transition<S>, E>`.
-- Existing `Result<Transition<S>, Transition<T>>` handlers continue to work as transition-on-error handlers.
-- Timeout-triggered transitions now rearm the next state's timeout correctly.
-- Timeout reset logic is centralized instead of being open-coded across branches.
-- Duplicate `#[on(state = ...)]` declarations on the same handler now produce a clear compile-time error.
-- Invalid FSM handler return types now fail with a clear compile-time error.
-- `#[fsm(serde = true)]` now fails with a clear compile-time message when the `tokio-fsm` `serde` feature is not enabled.
-- `handle.shutdown()` no longer cancels the caller's `CancellationToken`; the FSM now owns a child token.
-- Parent `CancellationToken` cancellation still propagates into the FSM.
-- Long-running handlers now stop promptly when shutdown is requested.
-- Generated code now uses the crate-local `tokio` re-export, which avoids path hygiene problems when consumers rename `tokio`.
-- Traced FSM execution no longer holds a tracing span guard across `.await`.
+- Improved proc-macro diagnostics: internal invariant failures now surface as structured compile errors instead of macro panics.
+- Tightened handler validation: handlers must be `async fn`, and combining `#[on(...)]` with `#[on_timeout]` is rejected with a clear compile-time error.
+- Corrected timeout and transition behavior: timeout-triggered transitions rearm correctly, and `Result<Transition<S>, E>` / transition-on-error forms continue to propagate as intended.
+- Preserved shutdown semantics: `handle.shutdown()` no longer cancels the caller's `CancellationToken`, while parent-token cancellation still propagates and long-running handlers stop promptly.
+- Improved generated runtime behavior: crate-local `tokio` re-exports avoid path hygiene issues and traced FSM execution no longer keeps span guards across `.await`.
+- Hardened Axum example behavior: duplicate order IDs now return `409 Conflict`, and stop/shutdown no longer holds shared mutexes across task await points.
 
 ### Changed
-- Added focused runtime coverage for error propagation, timeout chaining, shutdown semantics, parent-token behavior, and traced FSM execution.
-- Added focused UI coverage for duplicate source-state handlers, invalid handler return types, and missing `serde` feature diagnostics.
-- Refactored macro runtime code generation into smaller modules and added contributor-facing notes for the parse/validate/generate flow.
+- Expanded test coverage with deterministic timing paths and additional compile-fail UI checks for macro diagnostics.
+- Optimized macro reachability validation to a single DFS traversal from the initial state.
+- Continued macro/runtime codegen modularization with clearer contributor documentation around parse/validate/generate flow.
