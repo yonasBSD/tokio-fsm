@@ -109,7 +109,7 @@ async fn test_fsm_timeout() {
 }
 
 #[tokio::test]
-async fn test_fsm_graceful_shutdown() {
+async fn test_fsm_channel_close_shutdown() {
     let context = TestContext::default();
     let (handle, task) = IntegrationFsm::spawn(context);
 
@@ -120,13 +120,12 @@ async fn test_fsm_graceful_shutdown() {
         .await
         .unwrap();
 
-    // Shut down gracefully by dropping the handle (closing the TX)
+    // Close the last sender by dropping the handle.
     drop(handle);
 
     let final_context = task.await.unwrap();
 
-    // In graceful shutdown (via TX drop), it should process all remaining messages
-    // in the queue
+    // Once the channel is closed, the FSM drains queued events before exiting.
     assert_eq!(final_context.transition_count, 2);
     assert_eq!(final_context.job_data, vec!["queued"]);
 }

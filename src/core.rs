@@ -6,7 +6,7 @@
 /// should transition to next. It is usually created via the [`Transition::to`]
 /// helper.
 ///
-/// # Example
+/// # Examples
 ///
 /// ```rust
 /// # use tokio_fsm::Transition;
@@ -45,19 +45,36 @@ impl<T> Transition<T> {
 /// Error type returned by the FSM background task.
 ///
 /// This enum distinguishes between logical errors returned by your FSM handlers
-/// and runtime failures of the Tokio task itself (e.g., panics or
-/// cancellation).
+/// and runtime failures of the Tokio task itself (for example, panics or task
+/// aborts).
 ///
 /// # Type Parameters
 ///
 /// * `E`: The logical error type defined in your `impl` block via `type Error =
 ///   ...;`.
+///
+/// # Examples
+///
+/// ```rust,ignore
+/// use tokio_fsm::TaskError;
+///
+/// // Example of a match against a task's result
+/// match task.await {
+///     Ok(final_context) => println!("FSM finished normally."),
+///     Err(TaskError::Fsm(e)) => println!("FSM aborted with a logical error: {}", e),
+///     Err(TaskError::Join(e)) => println!("Tokio task failed (e.g. panicked): {}", e),
+/// }
+/// ```
 #[derive(Debug, thiserror::Error)]
 pub enum TaskError<E> {
-    /// The FSM handler returned a logical error.
+    /// The FSM handler returned a logical error, triggering a shutdown.
+    ///
+    /// This variant is used when your FSM handler returns `Result::Err(...)`.
     #[error("FSM error: {0}")]
     Fsm(E),
-    /// The background task failed due to a panic or external cancellation.
+    /// The background task failed due to a panic or explicit task abort.
+    ///
+    /// This wraps a [`tokio::task::JoinError`].
     #[error("Task join error: {0}")]
     Join(#[from] tokio::task::JoinError),
 }

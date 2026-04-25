@@ -10,7 +10,7 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
 
     quote! {
         impl #handle_name {
-            /// Sends an event to the FSM.
+            /// Sends an event to the FSM event queue.
             pub async fn send(&self, event: #event_enum_name) -> Result<(), ::tokio_fsm::tokio::sync::mpsc::error::SendError<#event_enum_name>> {
                 self.event_tx.send(event).await
             }
@@ -34,12 +34,15 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
                 Ok(())
             }
 
-            /// Shuts down the FSM immediately.
+            /// Requests cooperative shutdown of the FSM.
+            ///
+            /// This cancels the FSM's child token. If the FSM was spawned with
+            /// `spawn_with_token`, the parent token remains untouched.
             pub fn shutdown(&self) {
                 self.token.cancel();
             }
 
-            /// Returns the cancellation token for this FSM.
+            /// Returns the cancellation token owned by this handle.
             pub fn token(&self) -> &::tokio_fsm::tokio_util::sync::CancellationToken {
                 &self.token
             }

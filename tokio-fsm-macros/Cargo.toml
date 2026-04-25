@@ -6,10 +6,13 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+documentation = "https://docs.rs/tokio-fsm-macros"
 publish = true
 readme = "../README.md"
 
 description = "Proc macro for generating Tokio async finite state machines"
+keywords = ["tokio", "async", "fsm", "state-machine", "proc-macro"]
+categories = ["asynchronous", "development-tools::procedural-macro-helpers"]
 
 [lib]
 proc-macro = true

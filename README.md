@@ -3,28 +3,18 @@
 [![Crates.io](https://img.shields.io/crates/v/tokio-fsm.svg)](https://crates.io/crates/tokio-fsm)
 [![Docs](https://docs.rs/tokio-fsm/badge.svg)](https://docs.rs/tokio-fsm)
 [![CI](https://github.com/abhishekshree/tokio-fsm/actions/workflows/ci.yml/badge.svg)](https://github.com/abhishekshree/tokio-fsm/actions/workflows/ci.yml)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
+Compile-time validated, zero-overhead async finite state machines for [Tokio](https://tokio.rs).
 
-Compile-time validated Tokio async finite state machines with explicit Rust behavior and minimal runtime overhead.
+`tokio-fsm` turns a standard Rust `impl` block into a high-performance, Tokio-driven state machine. It eliminates the boilerplate of manual event loops, channel management, and timeout wiring while ensuring that your FSM logic is verified at compile-time.
 
-`tokio-fsm` allows you to define complex asynchronous state machines using a declarative macro. It handles the boilerplate of event loops, channel management, and state transitions.
+## Why tokio-fsm?
 
-## Features
-
-- **Declarative FSMs**: Define states and events using standard Rust `impl` blocks.
-- **Unified Handlers**: Use `#[on(state = X, event = Y)]` to map states and events to code.
-- **Async First**: All handlers are `async`.
-- **Compile-time Validation**: Verifies state reachability and valid transitions at compile-time.
-- **Type-Safe Transitions**: Ensures you only transition to valid states defined in your machine.
-
-## Defining States and Events
-
-You don't need to manually define enums or structs for your states and events. The `#[fsm]` macro **discovers** them from your implementation:
-
-- **States**: Are discovered from the `initial` parameter, the `state` field in `#[on]`, and the `Transition<State>` return types.
-- **Events**: Are discovered from the `event` field in `#[on]`.
-- **Event Data**: If a handler has a second argument (e.g., `fn handle(&mut self, data: MyData)`), the event will carry `MyData` as its payload.
+- **Zero Overhead**: Generates the same tight `match` loops you would write by hand. No runtime engine, no virtual dispatch, no heavy allocations.
+- **Async First**: All handlers are native `async fn` methods.
+- **Compile-Time Safety**: Validates state reachability and transition contracts during compilation using `petgraph`.
+- **Deterministic Lifecycle**: Explicit ownership model via a `Task` handle that ensures resources are cleaned up if the caller drops the FSM.
 
 ## Quick Start
 
@@ -32,7 +22,9 @@ You don't need to manually define enums or structs for your states and events. T
 use tokio_fsm::{fsm, Transition};
 
 #[derive(Debug, Default)]
-pub struct MyContext { count: usize }
+pub struct MyContext {
+    count: usize,
+}
 
 #[fsm(initial = Idle)]
 impl MyFsm {
@@ -53,54 +45,58 @@ impl MyFsm {
 
 #[tokio::main]
 async fn main() {
+    // Spawning returns a Handle and a Task. The Task must be awaited or held.
     let (handle, task) = MyFsm::spawn(MyContext::default());
-    
-    // Events are generated as an enum: [FsmName]Event
+
+    // Send events via the Handle
     handle.send(MyFsmEvent::Start).await.unwrap();
     
-    // Graceful shutdown
+    // Observer state changes
+    handle.wait_for_state(MyFsmState::Running).await.unwrap();
+
+    // Cooperative shutdown
     handle.shutdown();
     let final_context = task.await.unwrap();
+    assert_eq!(final_context.count, 1);
 }
 ```
 
+## Generated API
+
+For an `impl` named `MyFsm`, the macro generates:
+
+| Type | Description |
+|------|-------------|
+| `MyFsmState` | An enum of all discovered states. |
+| `MyFsmEvent` | An enum of all discovered events and their payloads. |
+| `MyFsmHandle` | A cloneable handle for sending events and querying state. |
+| `MyFsmTask` | A `Future` that drives the FSM. Resolves to `Result<Context, TaskError<E>>`. |
+
+## Handler Return Types
+
+Handlers are `async fn` methods that define how the machine moves between states. They can return:
+
+- [`Transition<Next>`](crate::Transition): A simple transition to a target state.
+- `Result<Transition<Next>, Transition<Other>>`: Branching logic where both paths lead to valid states.
+- `Result<Transition<Next>, E>`: A fallible handler where an error will terminate the FSM and return [`TaskError::Fsm(E)`](crate::TaskError::Fsm).
+
 ## Lifecycle and Ownership
 
-`tokio-fsm` uses a deterministic lifecycle model:
-- **Spawn**: Spawning an FSM returns a `Handle` and a `Task`.
-- **Ownership**: The `Task` must be retained! Spawning is marked `#[must_use]`.
-- **Abortion**: If the `Task` handle is dropped, the FSM is aborted immediately. This ensures that resources are not leaked if the caller crashes or forgets to shut down.
-- **Graceful Shutdown**: Call `handle.shutdown()` and `await` the `Task` to retrieve the final context.
+- **Task Drop**: If you drop the `MyFsmTask` handle, the FSM is aborted immediately. Spawning is marked `#[must_use]` to prevent accidental leaks.
+- **Handle Drop**: When the last `MyFsmHandle` is dropped, the internal event channel is closed. The FSM will exit after processing any remaining queued events.
+- **Graceful Shutdown**: Call `handle.shutdown()` to trigger a controlled exit, then `await` the task to retrieve the final context.
 
-## Production Example: Axum Order Processing
+## Configuration and Attributes
 
-For a more complete example showing how to use `tokio-fsm` in a real-world web application with [Axum](https://github.com/tokio-rs/axum), check out the [axum_fsm example](examples/axum_fsm).
+- `#[fsm(initial = Idle, channel_size = 100)]`: Customize the internal `mpsc` capacity.
+- `#[state_timeout(duration = "30s")]`: Rearm a single pinned timer whenever this state is reached.
+- `#[on_timeout]`: Define the handler for state timeouts.
+- `#[fsm(tracing = true)]`: Enable `tracing` instrumentation (requires `tracing` feature).
+- `#[fsm(serde = true)]`: Enable `serde` support for states and events (requires `serde` feature).
 
-It demonstrates:
-- Managing multiple FSM instances in memory.
-- Driving transitions via HTTP handlers.
-- Error handling and state querying.
+## Examples
 
-## Documentation
-
-- `#[fsm(initial = Idle, channel_size = 100)]`: Entry point for the FSM. `initial` takes the state name directly.
-- `#[on(state = Idle, event = Start)]`: Maps a handler to a specific state and event. You can have multiple `#[on]` attributes on one method for multi-state handlers.
-- `#[state_timeout(duration = "30s")]`: Configures a timeout for the state reached after this transition.
-- `#[on_timeout]`: Specifies the handler that executes when a state times out.
-
-## Architecture & Correctness
-
-`tokio-fsm` employs a 2-layer architecture:
-
-1.  **Validation Layer**: Parses the `impl` block, extracts semantic structure, and validates the FSM graph using `petgraph` at compile-time.
-2.  **Codegen Layer**: Generates strictly typed Rust code with state-gated event matching.
-
-### Optimizations
-- **Stack-Pinned Timeouts**: State timeouts use a single, reused `tokio::time::Sleep` future pinned to the stack, avoiding `Box::pin` allocations on every transition.
-- **Bounded Channels**: Events are processed via a bounded `mpsc` channel to apply backpressure.
-
-### Error Handling
-The background `Task` returns `Result<Context, TaskError<E>>`, where `TaskError` explicitly distinguishes between FSM logical errors and runtime task failures (panics/cancellation).
+For a full implementation showing Axum integration, multiple FSM instances, and error handling, see the [Axum Order Processing Example](examples/axum_fsm).
 
 ## License
 

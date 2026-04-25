@@ -1,3 +1,4 @@
+#![warn(missing_docs)]
 //! Proc macro for generating Tokio async finite state machines.
 
 use darling::FromMeta;
@@ -18,6 +19,10 @@ mod validation;
 /// * `initial = StateName`: (Required) The name of the starting state.
 /// * `channel_size = usize`: (Optional) The capacity of the internal event
 ///   queue (default: 100).
+/// * `tracing = true`: (Optional) Enables tracing instrumentation in the
+///   generated runtime.
+/// * `serde = true`: (Optional) Derives serde support for generated state and
+///   event enums when the `tokio-fsm` crate enables its `serde` feature.
 ///
 /// # Generated Types
 ///
@@ -29,8 +34,8 @@ mod validation;
 ///   payloads.
 /// * `WorkerFsmHandle`: A cloneable handle used to interact with the FSM (send
 ///   events, query state).
-/// * `WorkerFsmTask`: A `Future` that must be awaited to run the FSM. Resolves
-///   to `Result<Context, TaskError>`.
+/// * `WorkerFsmTask`: A [`Future`](std::future::Future) that must be awaited to run the FSM. Resolves
+///   to `Result<Context, TaskError<E>>`.
 ///
 /// # Handlers & Attributes
 ///
@@ -43,7 +48,13 @@ mod validation;
 /// * `#[on_timeout]`: Marks a method as the handler to call when a state
 ///   timeout occurs.
 ///
-/// # Example
+/// Event and timeout handlers may return:
+///
+/// * `Transition<Next>`
+/// * `Result<Transition<Next>, Transition<Other>>`
+/// * `Result<Transition<Next>, E>`
+///
+/// # Examples
 ///
 /// ```rust,ignore
 /// use tokio_fsm::{Transition, fsm};
