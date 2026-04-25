@@ -21,3 +21,4 @@ All notable user-facing changes to `tokio-fsm` will be documented in this file.
 ### Changed
 - Added focused runtime coverage for error propagation, timeout chaining, shutdown semantics, parent-token behavior, and traced FSM execution.
 - Added focused UI coverage for duplicate source-state handlers, invalid handler return types, and missing `serde` feature diagnostics.
+- Refactored macro runtime code generation into smaller modules and added contributor-facing notes for the parse/validate/generate flow.
