@@ -1,4 +1,4 @@
-use tokio::time::{Duration, sleep};
+use tokio::time::{Duration, timeout};
 use tokio_fsm::{Transition, fsm};
 use tokio_util::sync::CancellationToken;
 
@@ -27,10 +27,17 @@ async fn test_fsm_abort_on_drop() {
     // Drop the task handle - this should abort the FSM
     drop(task);
 
-    // After a short delay, the receiver should be closed
-    sleep(Duration::from_millis(10)).await;
-    let res = handle.send(LifecycleFsmEvent::Tick).await;
-    assert!(res.is_err(), "Expected send to fail after task is dropped");
+    // Poll until send fails to avoid scheduler-sensitive fixed sleeps.
+    timeout(Duration::from_millis(200), async {
+        loop {
+            if handle.send(LifecycleFsmEvent::Tick).await.is_err() {
+                break;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .expect("expected send to fail shortly after task drop");
 }
 
 #[tokio::test]

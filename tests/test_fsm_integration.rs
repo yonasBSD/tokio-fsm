@@ -87,7 +87,7 @@ async fn test_fsm_full_lifecycle() {
     assert_eq!(final_context.job_data, vec!["task1"]);
 }
 
-#[tokio::test]
+#[tokio::test(start_paused = true)]
 async fn test_fsm_timeout() {
     let context = TestContext::default();
     let (handle, task) = IntegrationFsm::spawn(context);
@@ -100,8 +100,11 @@ async fn test_fsm_timeout() {
         .unwrap();
 
     // Wait for timeout (100ms)
-    tokio::time::sleep(Duration::from_millis(200)).await;
-    assert_eq!(handle.current_state(), IntegrationFsmState::Failed);
+    tokio::time::advance(Duration::from_millis(200)).await;
+    handle
+        .wait_for_state(IntegrationFsmState::Failed)
+        .await
+        .unwrap();
 
     handle.shutdown();
     let final_context = task.await.unwrap();
