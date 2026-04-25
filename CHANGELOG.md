@@ -2,7 +2,7 @@
 
 All notable user-facing changes to `tokio-fsm` will be documented in this file.
 
-## Unreleased
+## v0.3.3 to v0.4.0
 
 ### Fixed
 - Improved proc-macro diagnostics: internal invariant failures now surface as structured compile errors instead of macro panics.
