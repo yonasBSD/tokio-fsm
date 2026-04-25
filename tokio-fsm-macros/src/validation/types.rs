@@ -23,16 +23,22 @@ pub struct Handler {
     pub event: Option<Event>,
     pub is_timeout_handler: bool,
     pub return_states: Vec<State>,
+    pub return_kind: Option<HandlerReturnKind>,
 
     // Derived semantic fields (previously in IR)
     /// Source states this handler is valid in.
     pub source_states: Vec<Ident>,
     /// Whether the event carries a payload argument.
     pub has_payload: bool,
-    /// Whether the return type is `Result<Transition<A>, Transition<B>>`.
-    pub is_result: bool,
     /// Parsed timeout duration for the target state, if any.
     pub timeout: Option<Duration>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandlerReturnKind {
+    Transition,
+    ResultTransition,
+    ResultError,
 }
 
 /// The complete FSM structure after parsing and validation.

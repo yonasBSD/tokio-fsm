@@ -2,6 +2,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 
 use crate::validation::FsmStructure;
+use crate::validation::HandlerReturnKind;
 
 pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
     let fsm_name = &fsm.fsm_name;
@@ -96,6 +97,18 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
         quote! {}
     };
 
+    let unmatched_arm = if fsm.tracing {
+        quote! {
+            (state, event) => {
+                #unhandled_event_log
+            }
+        }
+    } else {
+        quote! {
+            (_, _) => {}
+        }
+    };
+
     quote! {
         async fn run(
             mut self,
@@ -105,14 +118,14 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
         ) -> Result<#context_type, #error_type> {
             #tracing_span
 
-            let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(3153600000));
+            let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(0));
             tokio::pin!(sleep);
+            self.reset_timeout_for_current_state(sleep.as_mut());
 
             loop {
                 tokio::select! {
                     _ = &mut sleep => {
                         #timeout_logic
-                        sleep.as_mut().reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(3153600000));
                     }
                     _ = token.cancelled() => {
                         #tracing_cancellation
@@ -122,9 +135,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
                         let Some(event) = event else { break };
                         match (self.state, event) {
                             #(#event_arms)*
-                            (state, event) => {
-                                #unhandled_event_log
-                            }
+                            #unmatched_arm
                         }
                     }
                 }
@@ -139,6 +150,7 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
     let handle_name = fsm.handle_ident();
     let event_enum_name = fsm.event_enum_ident();
     let state_enum_name = fsm.state_enum_ident();
+    let timeout_reset_impl = render_timeout_reset_impl(fsm);
 
     quote! {
         impl #handle_name {
@@ -181,6 +193,8 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
                 self.name.as_deref()
             }
         }
+
+        #timeout_reset_impl
     }
 }
 
@@ -241,17 +255,8 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
             let event_name_str = event_name.to_string();
             let method_name = &handler.method.sig.ident;
 
-            // Timeout reset logic
-            let timeout_reset = if let Some(duration) = handler.timeout {
-                let secs = duration.as_secs();
-                let nanos = duration.subsec_nanos();
-                quote! {
-                    sleep.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::new(#secs, #nanos));
-                }
-            } else {
-                quote! {
-                    sleep.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(3153600000));
-                }
+            let timeout_reset = quote! {
+                self.reset_timeout_for_current_state(sleep.as_mut());
             };
 
             // Payload handling
@@ -269,34 +274,50 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 quote! {}
             };
 
-            // Result vs direct transition
-            let arm_inner = if handler.is_result {
-                quote! {
-                    let old_state = self.state;
-                    match self.#method_name #payload_call .await {
-                        Ok(transition) => {
-                            self.state = transition.into_state().into();
-                            let _ = state_tx.send(self.state);
-                            #tracing_log
-                            #timeout_reset
-                        }
-                        Err(transition) => {
-                            self.state = transition.into_state().into();
-                            let _ = state_tx.send(self.state);
-                            #tracing_log
-                            sleep.as_mut().reset(tokio::time::Instant::now() + std::time::Duration::from_secs(3153600000));
+            let arm_inner = match handler.return_kind {
+                Some(HandlerReturnKind::Transition) => {
+                    quote! {
+                        let old_state = self.state;
+                        let transition = self.#method_name #payload_call .await;
+                        self.state = transition.into_state().into();
+                        let _ = state_tx.send(self.state);
+                        #tracing_log
+                        #timeout_reset
+                    }
+                }
+                Some(HandlerReturnKind::ResultTransition) => {
+                    quote! {
+                        let old_state = self.state;
+                        match self.#method_name #payload_call .await {
+                            Ok(transition) => {
+                                self.state = transition.into_state().into();
+                                let _ = state_tx.send(self.state);
+                                #tracing_log
+                                #timeout_reset
+                            }
+                            Err(transition) => {
+                                self.state = transition.into_state().into();
+                                let _ = state_tx.send(self.state);
+                                #tracing_log
+                                #timeout_reset
+                            }
                         }
                     }
                 }
-            } else {
-                quote! {
-                    let old_state = self.state;
-                    let transition = self.#method_name #payload_call .await;
-                    self.state = transition.into_state().into();
-                    let _ = state_tx.send(self.state);
-                    #tracing_log
-                    #timeout_reset
+                Some(HandlerReturnKind::ResultError) => {
+                    quote! {
+                        let old_state = self.state;
+                        let transition = match self.#method_name #payload_call .await {
+                            Ok(transition) => transition,
+                            Err(error) => return Err(error),
+                        };
+                        self.state = transition.into_state().into();
+                        let _ = state_tx.send(self.state);
+                        #tracing_log
+                        #timeout_reset
+                    }
                 }
+                None => quote! {},
             };
 
             // Generate one match arm per source state (state-gated)
@@ -317,12 +338,91 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
 fn build_timeout_handler(fsm: &FsmStructure) -> TokenStream {
     if let Some(handler) = fsm.handlers.iter().find(|h| h.is_timeout_handler) {
         let name = &handler.method.sig.ident;
-        quote! {
-            let transition = self.#name().await;
-            self.state = transition.into_state().into();
-            let _ = state_tx.send(self.state);
+        match handler.return_kind {
+            Some(HandlerReturnKind::Transition) => quote! {
+                let transition = self.#name().await;
+                self.state = transition.into_state().into();
+                let _ = state_tx.send(self.state);
+                self.reset_timeout_for_current_state(sleep.as_mut());
+            },
+            Some(HandlerReturnKind::ResultTransition) => quote! {
+                match self.#name().await {
+                    Ok(transition) => {
+                        self.state = transition.into_state().into();
+                        let _ = state_tx.send(self.state);
+                        self.reset_timeout_for_current_state(sleep.as_mut());
+                    }
+                    Err(transition) => {
+                        self.state = transition.into_state().into();
+                        let _ = state_tx.send(self.state);
+                        self.reset_timeout_for_current_state(sleep.as_mut());
+                    }
+                }
+            },
+            Some(HandlerReturnKind::ResultError) => quote! {
+                let transition = match self.#name().await {
+                    Ok(transition) => transition,
+                    Err(error) => return Err(error),
+                };
+                self.state = transition.into_state().into();
+                let _ = state_tx.send(self.state);
+                self.reset_timeout_for_current_state(sleep.as_mut());
+            },
+            None => quote! {},
         }
     } else {
         quote! {}
+    }
+}
+
+fn render_timeout_reset_impl(fsm: &FsmStructure) -> TokenStream {
+    let fsm_name = &fsm.fsm_name;
+    let state_enum_name = fsm.state_enum_ident();
+
+    let mut seen_states = Vec::new();
+    let mut timeout_arms = Vec::new();
+
+    for handler in &fsm.handlers {
+        let Some(duration) = handler.timeout else {
+            continue;
+        };
+
+        let secs = duration.as_secs();
+        let nanos = duration.subsec_nanos();
+
+        for target in &handler.return_states {
+            if seen_states
+                .iter()
+                .any(|state: &syn::Ident| state == &target.name)
+            {
+                continue;
+            }
+            seen_states.push(target.name.clone());
+
+            let state_name = &target.name;
+            timeout_arms.push(quote! {
+                #state_enum_name::#state_name => {
+                    sleep.reset(tokio::time::Instant::now() + std::time::Duration::new(#secs, #nanos));
+                }
+            });
+        }
+    }
+
+    quote! {
+        impl #fsm_name {
+            fn reset_timeout_for_current_state(
+                &self,
+                sleep: std::pin::Pin<&mut tokio::time::Sleep>,
+            ) {
+                const NO_TIMEOUT_SECS: u64 = 3_153_600_000;
+
+                match self.state {
+                    #(#timeout_arms)*
+                    _ => {
+                        sleep.reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(NO_TIMEOUT_SECS));
+                    }
+                }
+            }
+        }
     }
 }

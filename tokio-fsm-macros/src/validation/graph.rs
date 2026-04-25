@@ -1,4 +1,5 @@
 use std::collections::{HashMap, HashSet};
+use std::time::Duration;
 
 use petgraph::{
     algo::has_path_connecting,
@@ -13,6 +14,7 @@ impl FsmStructure {
     pub fn validate(&self) -> syn::Result<()> {
         let has_timeout_handler = self.validate_timeout_contract()?;
         let states_with_timeout = self.identify_states_with_timeout(has_timeout_handler)?;
+        self.validate_state_timeout_consistency()?;
 
         let mut graph = DiGraph::<&Ident, ()>::new();
         let mut nodes = HashMap::new();
@@ -115,6 +117,37 @@ impl FsmStructure {
                 ));
             }
         }
+        Ok(())
+    }
+
+    fn validate_state_timeout_consistency(&self) -> syn::Result<()> {
+        let mut timeout_by_state: HashMap<String, (Duration, &syn::Ident)> = HashMap::new();
+
+        for handler in &self.handlers {
+            let Some(timeout) = handler.timeout else {
+                continue;
+            };
+
+            for target in &handler.return_states {
+                let state_name = target.name.to_string();
+                if let Some((existing_timeout, existing_handler)) =
+                    timeout_by_state.get(&state_name)
+                {
+                    if *existing_timeout != timeout {
+                        return Err(syn::Error::new_spanned(
+                            &handler.method.sig.ident,
+                            format!(
+                                "State '{}' has conflicting timeout durations declared by '{}' and '{}'",
+                                target.name, existing_handler, handler.method.sig.ident
+                            ),
+                        ));
+                    }
+                } else {
+                    timeout_by_state.insert(state_name, (timeout, &handler.method.sig.ident));
+                }
+            }
+        }
+
         Ok(())
     }
 }

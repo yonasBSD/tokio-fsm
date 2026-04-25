@@ -1,0 +1,5 @@
+error: FSM handlers must return Transition<NextState> or Result<Transition<NextState>, ...>
+ --> tests/ui/invalid_return_type.rs:9:37
+  |
+9 |     async fn on_start(&mut self) -> usize {
+  |                                     ^^^^^
