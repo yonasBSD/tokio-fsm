@@ -19,7 +19,7 @@ pub mod structs;
 ///
 /// See `tokio-fsm-macros/CODEGEN.md` for contributor-oriented notes on where to
 /// edit the codegen when behavior changes.
-pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
+pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> syn::Result<TokenStream> {
     let fsm_name = &fsm.fsm_name;
     let original_methods = &original_impl.items;
 
@@ -33,7 +33,7 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
 
     // Generate implementations
     let spawn_impl = impls::render_spawn(fsm);
-    let run_impl = impls::render_run(fsm);
+    let run_impl = impls::render_run(fsm)?;
     let fsm_private_impl = impls::render_fsm_private_helpers(fsm);
     let handle_impl = impls::render_handle_impl(fsm);
     let task_impl = impls::render_task_impl(fsm);
@@ -57,7 +57,7 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
         })
         .collect();
 
-    quote! {
+    Ok(quote! {
         #state_enum
         #event_enum
 
@@ -76,5 +76,5 @@ pub fn generate(fsm: &FsmStructure, original_impl: &ItemImpl) -> TokenStream {
         #handle_impl
         #task_impl
         #task_drop
-    }
+    })
 }

@@ -7,6 +7,13 @@ use crate::attrs;
 impl Handler {
     /// Parse a method into a Handler with all semantic fields derived.
     pub fn parse(method: &syn::ImplItemFn) -> syn::Result<Self> {
+        if method.sig.asyncness.is_none() {
+            return Err(Error::new_spanned(
+                &method.sig.ident,
+                "FSM handlers must be declared as async fn",
+            ));
+        }
+
         let mut event: Option<Event> = None;
         let mut is_timeout_handler = false;
         let mut state_timeout_attr = None;
@@ -84,6 +91,13 @@ impl Handler {
         } else {
             (None, Vec::new())
         };
+
+        if event.is_some() && is_timeout_handler {
+            return Err(Error::new_spanned(
+                &method.sig.ident,
+                "Handler cannot use both #[on(...)] and #[on_timeout]; split into separate methods",
+            ));
+        }
 
         Ok(Self {
             method: method.clone(),

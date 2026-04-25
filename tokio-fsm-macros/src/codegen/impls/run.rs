@@ -8,19 +8,20 @@
 
 use proc_macro2::TokenStream;
 use quote::quote;
+use syn::Error;
 
 use super::helpers::{render_cancellable_call, render_transition_dispatch};
 use crate::validation::FsmStructure;
 
-pub fn render_run(fsm: &FsmStructure) -> TokenStream {
+pub fn render_run(fsm: &FsmStructure) -> syn::Result<TokenStream> {
     let event_enum_name = fsm.event_enum_ident();
     let state_enum_name = fsm.state_enum_ident();
     let context_type = &fsm.context_type;
     let error_type = &fsm.error_type;
     let fsm_name_str = fsm.fsm_name.to_string();
 
-    let event_arms = build_event_arms(fsm);
-    let timeout_logic = build_timeout_handler(fsm);
+    let event_arms = build_event_arms(fsm)?;
+    let timeout_logic = build_timeout_handler(fsm)?;
 
     let tracing_span = if fsm.tracing {
         quote! {
@@ -65,7 +66,7 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
         }
     };
 
-    quote! {
+    Ok(quote! {
         async fn run(
             mut self,
             mut events: ::tokio_fsm::tokio::sync::mpsc::Receiver<#event_enum_name>,
@@ -103,10 +104,10 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
 
             #run_loop_await
         }
-    }
+    })
 }
 
-fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
+fn build_event_arms(fsm: &FsmStructure) -> syn::Result<Vec<TokenStream>> {
     let mut arms = Vec::new();
     let event_enum = fsm.event_enum_ident();
     let state_enum = fsm.state_enum_ident();
@@ -127,10 +128,14 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 self.#method_name #payload_call
             });
 
+            let return_kind = handler.return_kind.ok_or_else(|| {
+                Error::new_spanned(
+                    &handler.method.sig.ident,
+                    "Internal macro error: missing parsed return kind for event handler",
+                )
+            })?;
             let arm_inner = render_transition_dispatch(
-                handler
-                    .return_kind
-                    .expect("event handlers must have a parsed return kind"),
+                return_kind,
                 handler_call,
                 quote! { Some(#event_name_str) },
             );
@@ -145,24 +150,29 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
         }
     }
 
-    arms
+    Ok(arms)
 }
 
-fn build_timeout_handler(fsm: &FsmStructure) -> TokenStream {
+fn build_timeout_handler(fsm: &FsmStructure) -> syn::Result<TokenStream> {
     if let Some(handler) = fsm.handlers.iter().find(|h| h.is_timeout_handler) {
         let method_name = &handler.method.sig.ident;
         let timeout_call = render_cancellable_call(quote! {
             self.#method_name()
         });
 
-        render_transition_dispatch(
-            handler
-                .return_kind
-                .expect("timeout handlers must have a parsed return kind"),
+        let return_kind = handler.return_kind.ok_or_else(|| {
+            Error::new_spanned(
+                &handler.method.sig.ident,
+                "Internal macro error: missing parsed return kind for timeout handler",
+            )
+        })?;
+
+        Ok(render_transition_dispatch(
+            return_kind,
             timeout_call,
             quote! { None },
-        )
+        ))
     } else {
-        quote! {}
+        Ok(quote! {})
     }
 }

@@ -48,6 +48,9 @@ mod validation;
 /// * `#[on_timeout]`: Marks a method as the handler to call when a state
 ///   timeout occurs.
 ///
+/// A single handler method cannot combine `#[on(...)]` and `#[on_timeout]`.
+/// Define separate methods for event-driven and timeout-driven transitions.
+///
 /// Event and timeout handlers may return:
 ///
 /// * `Transition<Next>`
@@ -102,5 +105,5 @@ fn generate_fsm(args: attrs::FsmArgs, input: ItemImpl) -> syn::Result<proc_macro
     let fsm = validation::FsmStructure::parse(args, &input)?;
 
     // 2. Generate code
-    Ok(codegen::generate(&fsm, &input))
+    codegen::generate(&fsm, &input)
 }
