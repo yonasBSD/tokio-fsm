@@ -27,8 +27,8 @@ pub fn render_handle_struct(fsm: &FsmStructure) -> TokenStream {
         /// A handle to the running FSM for event submission and state observation.
         #[derive(Clone)]
         pub struct #handle_name {
-            event_tx: tokio::sync::mpsc::Sender<#event_enum_name>,
-            state_rx: tokio::sync::watch::Receiver<#state_enum_name>,
+            event_tx: ::tokio_fsm::tokio::sync::mpsc::Sender<#event_enum_name>,
+            state_rx: ::tokio_fsm::tokio::sync::watch::Receiver<#state_enum_name>,
             token: ::tokio_fsm::tokio_util::sync::CancellationToken,
             name: Option<String>,
         }
@@ -44,7 +44,7 @@ pub fn render_task_struct(fsm: &FsmStructure) -> TokenStream {
         /// A handle to the background task running the FSM.
         /// Awaiting this will return the final context or an error.
         pub struct #task_name {
-            handle: tokio::task::JoinHandle<Result<#context_type, #error_type>>,
+            handle: ::tokio_fsm::tokio::task::JoinHandle<Result<#context_type, #error_type>>,
         }
     }
 }

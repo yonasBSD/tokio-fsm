@@ -31,8 +31,8 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
 
         #[must_use = "FSM task must be retained or it will be aborted immediately"]
         pub fn spawn_named_with_token(name: Option<String>, context: #context_type, token: ::tokio_fsm::tokio_util::sync::CancellationToken) -> (#handle_name, #task_name) {
-            let (event_tx, event_rx) = tokio::sync::mpsc::channel(#channel_size);
-            let (state_tx, state_rx) = tokio::sync::watch::channel(#state_enum_name::#initial_state);
+            let (event_tx, event_rx) = ::tokio_fsm::tokio::sync::mpsc::channel(#channel_size);
+            let (state_tx, state_rx) = ::tokio_fsm::tokio::sync::watch::channel(#state_enum_name::#initial_state);
 
             let fsm = #fsm_name {
                 state: #state_enum_name::#initial_state,
@@ -40,10 +40,10 @@ pub fn render_spawn(fsm: &FsmStructure) -> TokenStream {
                 name: name.clone(), // Clone for the FSM instance
             };
 
-            // CancellationToken is a cheap Arc-clone
-            let handle_token = token.clone();
+            let child_token = token.child_token();
+            let handle_token = child_token.clone();
 
-            let handle = tokio::spawn(fsm.run(event_rx, token, state_tx));
+            let handle = ::tokio_fsm::tokio::spawn(fsm.run(event_rx, child_token, state_tx));
 
             (
                 #handle_name {
@@ -75,10 +75,20 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
                 name = #fsm_name_str,
                 fsm_id = self.name.as_deref().unwrap_or("unnamed")
             );
-            let _guard = span.enter();
         }
     } else {
         quote! {}
+    };
+
+    let run_loop_await = if fsm.tracing {
+        quote! {
+            use ::tokio_fsm::tracing::Instrument as _;
+            run_loop.instrument(span).await
+        }
+    } else {
+        quote! {
+            run_loop.await
+        }
     };
 
     let tracing_cancellation = if fsm.tracing {
@@ -112,36 +122,40 @@ pub fn render_run(fsm: &FsmStructure) -> TokenStream {
     quote! {
         async fn run(
             mut self,
-            mut events: tokio::sync::mpsc::Receiver<#event_enum_name>,
+            mut events: ::tokio_fsm::tokio::sync::mpsc::Receiver<#event_enum_name>,
             token: ::tokio_fsm::tokio_util::sync::CancellationToken,
-            state_tx: tokio::sync::watch::Sender<#state_enum_name>,
+            state_tx: ::tokio_fsm::tokio::sync::watch::Sender<#state_enum_name>,
         ) -> Result<#context_type, #error_type> {
             #tracing_span
 
-            let sleep = tokio::time::sleep(tokio::time::Duration::from_secs(0));
-            tokio::pin!(sleep);
-            self.reset_timeout_for_current_state(sleep.as_mut());
+            let run_loop = async move {
+                let sleep = ::tokio_fsm::tokio::time::sleep(::tokio_fsm::tokio::time::Duration::from_secs(0));
+                ::tokio_fsm::tokio::pin!(sleep);
+                self.reset_timeout_for_current_state(sleep.as_mut());
 
-            loop {
-                tokio::select! {
-                    _ = &mut sleep => {
-                        #timeout_logic
-                    }
-                    _ = token.cancelled() => {
-                        #tracing_cancellation
-                        return Ok(self.context);
-                    }
-                    event = events.recv() => {
-                        let Some(event) = event else { break };
-                        match (self.state, event) {
-                            #(#event_arms)*
-                            #unmatched_arm
+                loop {
+                    ::tokio_fsm::tokio::select! {
+                        _ = &mut sleep => {
+                            #timeout_logic
+                        }
+                        _ = token.cancelled() => {
+                            #tracing_cancellation
+                            return Ok(self.context);
+                        }
+                        event = events.recv() => {
+                            let Some(event) = event else { break };
+                            match (self.state, event) {
+                                #(#event_arms)*
+                                #unmatched_arm
+                            }
                         }
                     }
                 }
-            }
 
-            Ok(self.context)
+                Ok(self.context)
+            };
+
+            #run_loop_await
         }
     }
 }
@@ -155,12 +169,12 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
     quote! {
         impl #handle_name {
             /// Sends an event to the FSM.
-            pub async fn send(&self, event: #event_enum_name) -> Result<(), tokio::sync::mpsc::error::SendError<#event_enum_name>> {
+            pub async fn send(&self, event: #event_enum_name) -> Result<(), ::tokio_fsm::tokio::sync::mpsc::error::SendError<#event_enum_name>> {
                 self.event_tx.send(event).await
             }
 
             /// Attempts to send an event without awaiting capacity.
-            pub fn try_send(&self, event: #event_enum_name) -> Result<(), tokio::sync::mpsc::error::TrySendError<#event_enum_name>> {
+            pub fn try_send(&self, event: #event_enum_name) -> Result<(), ::tokio_fsm::tokio::sync::mpsc::error::TrySendError<#event_enum_name>> {
                 self.event_tx.try_send(event)
             }
 
@@ -170,7 +184,7 @@ pub fn render_handle_impl(fsm: &FsmStructure) -> TokenStream {
             }
 
             /// Waits for the FSM to reach the specified state.
-            pub async fn wait_for_state(&self, target: #state_enum_name) -> Result<(), tokio::sync::watch::error::RecvError> {
+            pub async fn wait_for_state(&self, target: #state_enum_name) -> Result<(), ::tokio_fsm::tokio::sync::watch::error::RecvError> {
                 let mut rx = self.state_rx.clone(); // Cheap watch::Receiver clone
                 while *rx.borrow_and_update() != target {
                     rx.changed().await?;
@@ -274,11 +288,18 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 quote! {}
             };
 
+            let handler_call = quote! {
+                ::tokio_fsm::tokio::select! {
+                    _ = token.cancelled() => return Ok(self.context),
+                    result = self.#method_name #payload_call => result,
+                }
+            };
+
             let arm_inner = match handler.return_kind {
                 Some(HandlerReturnKind::Transition) => {
                     quote! {
                         let old_state = self.state;
-                        let transition = self.#method_name #payload_call .await;
+                        let transition = #handler_call;
                         self.state = transition.into_state().into();
                         let _ = state_tx.send(self.state);
                         #tracing_log
@@ -288,7 +309,7 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 Some(HandlerReturnKind::ResultTransition) => {
                     quote! {
                         let old_state = self.state;
-                        match self.#method_name #payload_call .await {
+                        match #handler_call {
                             Ok(transition) => {
                                 self.state = transition.into_state().into();
                                 let _ = state_tx.send(self.state);
@@ -307,7 +328,7 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
                 Some(HandlerReturnKind::ResultError) => {
                     quote! {
                         let old_state = self.state;
-                        let transition = match self.#method_name #payload_call .await {
+                        let transition = match #handler_call {
                             Ok(transition) => transition,
                             Err(error) => return Err(error),
                         };
@@ -338,15 +359,21 @@ fn build_event_arms(fsm: &FsmStructure) -> Vec<TokenStream> {
 fn build_timeout_handler(fsm: &FsmStructure) -> TokenStream {
     if let Some(handler) = fsm.handlers.iter().find(|h| h.is_timeout_handler) {
         let name = &handler.method.sig.ident;
+        let timeout_call = quote! {
+            ::tokio_fsm::tokio::select! {
+                _ = token.cancelled() => return Ok(self.context),
+                result = self.#name() => result,
+            }
+        };
         match handler.return_kind {
             Some(HandlerReturnKind::Transition) => quote! {
-                let transition = self.#name().await;
+                let transition = #timeout_call;
                 self.state = transition.into_state().into();
                 let _ = state_tx.send(self.state);
                 self.reset_timeout_for_current_state(sleep.as_mut());
             },
             Some(HandlerReturnKind::ResultTransition) => quote! {
-                match self.#name().await {
+                match #timeout_call {
                     Ok(transition) => {
                         self.state = transition.into_state().into();
                         let _ = state_tx.send(self.state);
@@ -360,7 +387,7 @@ fn build_timeout_handler(fsm: &FsmStructure) -> TokenStream {
                 }
             },
             Some(HandlerReturnKind::ResultError) => quote! {
-                let transition = match self.#name().await {
+                let transition = match #timeout_call {
                     Ok(transition) => transition,
                     Err(error) => return Err(error),
                 };
@@ -402,7 +429,7 @@ fn render_timeout_reset_impl(fsm: &FsmStructure) -> TokenStream {
             let state_name = &target.name;
             timeout_arms.push(quote! {
                 #state_enum_name::#state_name => {
-                    sleep.reset(tokio::time::Instant::now() + std::time::Duration::new(#secs, #nanos));
+                    sleep.reset(::tokio_fsm::tokio::time::Instant::now() + std::time::Duration::new(#secs, #nanos));
                 }
             });
         }
@@ -412,14 +439,14 @@ fn render_timeout_reset_impl(fsm: &FsmStructure) -> TokenStream {
         impl #fsm_name {
             fn reset_timeout_for_current_state(
                 &self,
-                sleep: std::pin::Pin<&mut tokio::time::Sleep>,
+                sleep: std::pin::Pin<&mut ::tokio_fsm::tokio::time::Sleep>,
             ) {
                 const NO_TIMEOUT_SECS: u64 = 3_153_600_000;
 
                 match self.state {
                     #(#timeout_arms)*
                     _ => {
-                        sleep.reset(tokio::time::Instant::now() + tokio::time::Duration::from_secs(NO_TIMEOUT_SECS));
+                        sleep.reset(::tokio_fsm::tokio::time::Instant::now() + ::tokio_fsm::tokio::time::Duration::from_secs(NO_TIMEOUT_SECS));
                     }
                 }
             }

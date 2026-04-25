@@ -26,14 +26,14 @@ pub fn render_state_enum(fsm: &FsmStructure) -> TokenStream {
         .collect();
 
     let serde_derive = if fsm.serde {
-        quote! { #[derive(::tokio_fsm::serde::Serialize, ::tokio_fsm::serde::Deserialize)] }
+        quote! { ::tokio_fsm::__tokio_fsm_serde_derive!(); }
     } else {
         quote! {}
     };
 
     quote! {
-        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         #serde_derive
+        #[derive(Debug, Clone, Copy, PartialEq, Eq)]
         pub enum #state_enum_name {
             #(#states,)*
         }
@@ -59,14 +59,14 @@ pub fn render_event_enum(fsm: &FsmStructure) -> TokenStream {
     let event_enum_name = fsm.event_enum_ident();
 
     let serde_derive = if fsm.serde {
-        quote! { #[derive(::tokio_fsm::serde::Serialize, ::tokio_fsm::serde::Deserialize)] }
+        quote! { ::tokio_fsm::__tokio_fsm_serde_derive!(); }
     } else {
         quote! {}
     };
 
     quote! {
-        #[derive(Debug, Clone)]
         #serde_derive
+        #[derive(Debug, Clone)]
         pub enum #event_enum_name {
             #(#variants)*
         }
