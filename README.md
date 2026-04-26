@@ -94,6 +94,12 @@ Handlers are `async fn` methods that define how the machine moves between states
 - `#[fsm(tracing = true)]`: Enable `tracing` instrumentation (requires `tracing` feature).
 - `#[fsm(serde = true)]`: Enable `serde` support for states and events (requires `serde` feature).
 
+## Graph Validation & Safety
+
+`tokio-fsm` goes beyond simple type-checking. It validates your state machine as a formal mathematical graph $(Q, \Sigma, \delta, q_0, F)$. 
+
+For more information and a live comparison showing why `tokio-fsm` catches errors that typestate might miss, see the [Validation Comparison Example](examples/validation_comparison).
+
 ## Examples
 
 For a full implementation showing Axum integration, multiple FSM instances, and error handling, see the [Axum Order Processing Example](examples/axum_fsm).
